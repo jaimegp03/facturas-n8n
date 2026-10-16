@@ -1,0 +1,799 @@
+[
+  {
+    "updatedAt": "2026-10-15T05:03:43.414Z",
+    "createdAt": "2026-10-14T18:50:48.932Z",
+    "id": "Uf7N5EXv9D4UcqDV",
+    "name": "FACT — Asesor de gastos",
+    "description": "POST /asesor y GET /recomendaciones: detecta suscripciones, solapes, subidas, categorías que crecen, gasto hormiga y vencimientos (cifras en Code); Gemini solo redacta y un Code verifica las cifras.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "a6d61756-707f-48dd-bf26-20d6c38a8bb2",
+        "name": "POST /asesor",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          200
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "asesor",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "webhookId": "350970a1-c438-4e25-bf71-c78979646659",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        }
+      },
+      {
+        "id": "9aa42df9-0548-4534-97fb-1aef0f2940db",
+        "name": "Parámetros",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          300
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Normaliza la entrada: webhook POST /asesor (desde/hasta en el cuerpo JSON o en\n// la query) o Schedule Trigger (sin parámetros). Por defecto, últimos 12 meses\n// hasta hoy (Europe/Madrid), igual que GET /resumen.\nconst e = $input.first().json || {};\nconst esWebhook = e.headers !== undefined && typeof e.headers === 'object';\nconst origen = esWebhook ? 'webhook' : 'schedule';\nconst cuerpo = esWebhook && e.body && typeof e.body === 'object' && !Array.isArray(e.body) ? e.body : {};\nconst query = esWebhook && e.query && typeof e.query === 'object' ? e.query : {};\nconst fechaValida = (s) => {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return false;\n  const [y, m, d] = s.split('-').map(Number);\n  const dt = new Date(Date.UTC(y, m - 1, d));\n  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;\n};\nconst errores = [];\nconst leer = (k) => {\n  const v = cuerpo[k] !== undefined && cuerpo[k] !== null && cuerpo[k] !== '' ? cuerpo[k] : query[k];\n  if (v === undefined || v === null || v === '') return null;\n  if (typeof v !== 'string' || !fechaValida(v.trim())) { errores.push(`\"${k}\" debe ser una fecha AAAA-MM-DD válida.`); return null; }\n  return v.trim();\n};\nconst ahora = $now.setZone('Europe/Madrid');\nconst hoy = ahora.toISODate();\nlet desde = leer('desde');\nlet hasta = leer('hasta');\nif (!errores.length) {\n  if (!hasta) hasta = hoy;\n  if (!desde) desde = ahora.minus({ years: 1 }).plus({ days: 1 }).toISODate();\n  if (desde > hasta) errores.push('\"desde\" no puede ser posterior a \"hasta\".');\n}\n// cliente_id (opcional): limita el cálculo a un cliente de la gestoría.\nconst crudoCliente = cuerpo.cliente_id !== undefined && cuerpo.cliente_id !== null && cuerpo.cliente_id !== '' ? cuerpo.cliente_id : query.cliente_id;\nlet cliente_id = null;\nif (crudoCliente !== undefined && crudoCliente !== null && String(crudoCliente).trim() !== '') {\n  if (!/^\\d{1,12}$/.test(String(crudoCliente).trim())) errores.push('\"cliente_id\" debe ser un entero positivo.');\n  else cliente_id = Number(String(crudoCliente).trim());\n}\nif (errores.length) return [{ json: { origen, _error: true, status: 400, body: { error: 'Parámetros no válidos.', detalles: errores } } }];\nreturn [{ json: { origen, _error: false, desde, hasta, hoy, cliente_id, generado: ahora.toISO() } }];\n"
+        }
+      },
+      {
+        "id": "517d9216-fd2f-4445-9f08-29f75e8d33cf",
+        "name": "Cada mes (día 1, 08:00)",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.4,
+        "position": [
+          0,
+          400
+        ],
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "months",
+                "monthsInterval": 1,
+                "triggerAtDayOfMonth": 1,
+                "triggerAtHour": 8,
+                "triggerAtMinute": 0
+              }
+            ]
+          }
+        },
+        "disabled": true
+      },
+      {
+        "id": "150d2627-3a82-4a53-bc1c-068f1f326362",
+        "name": "¿Parámetros válidos?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          480,
+          300
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "254bd96b-4500-4e21-b6a1-e90e0fd75325",
+        "name": "Leer facturas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          720,
+          200
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "usuario_id",
+                "condition": "eq",
+                "keyValue": "default"
+              }
+            ]
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "d649cff5-ba2e-4b7e-87f2-9e7ded47a3b9",
+        "name": "Analizar y proponer",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          960,
+          200
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Asesor de gastos — detectores y candidatos de recomendación.\n// TODAS las cifras se calculan aquí en céntimos enteros y se formatean en es-ES.\n// Gemini solo redacta después a partir del campo \"dato\"; nunca calcula.\nconst p = $('Parámetros').first().json;\nconst { desde, hasta, hoy } = p;\nconst referencia = hasta < hoy ? hasta : hoy; // fecha de referencia para \"activo\" y meses completos\nconst DIA = 86400000;\nconst aMs = (s) => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };\nconst aFecha = (ms) => new Date(ms).toISOString().slice(0, 10);\nconst diasEntre = (a, b) => Math.round((aMs(b) - aMs(a)) / DIA);\nconst EXCLUIDOS = ['borrada', 'duplicada'];\n\n// === COMÚN Recurrentes: inicio ===\n// Bloque idéntico en FACT — API («Resumen: calcular»), FACT — Asesor de gastos\n// («Analizar y proponer») y FACT — Exportar Excel («Generar Excel»).\n// Si cambias algo aquí, cópialo en los tres. Céntimos enteros.\n// Por cada proveedor_norm con facturas suscripcion/contrato se toma la última\n// (fecha_emision; a igualdad, id) y la anterior. coste_anual = importe × periodos/año;\n// coste_mensual = coste_anual / 12 redondeado al céntimo; los totales suman esos valores.\nconst POR_ANIO = { semanal: 52, mensual: 12, bimestral: 6, trimestral: 4, semestral: 2, anual: 1 };\nconst centimos = (x) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x * 100) : 0);\nconst claveProveedor = (f) => f.proveedor_norm || String(f.proveedor || 'desconocido').toLowerCase();\nconst ordenFecha = (a, b) => (a.fecha_emision === b.fecha_emision ? a.id - b.id : a.fecha_emision < b.fecha_emision ? -1 : 1);\nconst calcularRecurrentes = (facturas) => {\n  const grupos = {};\n  for (const f of facturas.filter((x) => x.tipo_gasto === 'suscripcion' || x.tipo_gasto === 'contrato').sort(ordenFecha)) {\n    const k = claveProveedor(f);\n    (grupos[k] = grupos[k] || []).push(f);\n  }\n  let mensualC = 0;\n  let anualC = 0;\n  const items = Object.keys(grupos).map((clave) => {\n    const lista = grupos[clave];\n    const factura = lista[lista.length - 1];\n    const anterior = lista.length > 1 ? lista[lista.length - 2] : null;\n    const veces = POR_ANIO[factura.periodicidad] || null;\n    const importeC = centimos(factura.total);\n    const anual = veces ? importeC * veces : null;\n    const mensual = veces ? Math.round(anual / 12) : null;\n    if (veces) { anualC += anual; mensualC += mensual; }\n    return { clave, factura, anterior, num: lista.length, veces, importeC, mensualC: mensual, anualC: anual };\n  });\n  return { items, mensualC, anualC };\n};\n// === COMÚN Recurrentes: fin ===\n\n// ---- Formato es-ES determinista (no depende de ICU) ----\nconst miles = (n) => String(n).replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.');\nconst fmtNum = (c) => {\n  const a = Math.abs(Math.round(c));\n  return (c < 0 ? '-' : '') + miles(Math.floor(a / 100)) + ',' + String(a % 100).padStart(2, '0');\n};\nconst fmtEur = (c) => fmtNum(c) + ' €';\nconst fmtPct = (decimas) => { const a = Math.abs(decimas); return (decimas < 0 ? '-' : '') + miles(Math.floor(a / 10)) + ',' + (a % 10) + ' %'; };\nconst fmtFecha = (s) => s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4);\nconst MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];\nconst nombreMes = (k) => MESES[Number(k.slice(5, 7)) - 1] + ' de ' + k.slice(0, 4);\nconst eur = (c) => (c === null || c === undefined ? null : Math.round(c) / 100);\nconst pctDecimas = (parte, base) => (base ? Math.round((parte * 1000) / base) : null);\nconst nombreCorto = (s) => String(s || 'Proveedor desconocido')\n  .replace(/[,\\s]+(S\\.?\\s?A\\.?\\s?U\\.?|S\\.?\\s?L\\.?\\s?U\\.?|S\\.?\\s?A\\.?|S\\.?\\s?L\\.?|B\\.?\\s?V\\.?|N\\.?\\s?V\\.?|Ltd\\.?|Limited|AB|Inc\\.?|LLC|GmbH|PLC)$/i, '')\n  .trim();\nconst norm = (s) => String(s || '').normalize('NFD').replace(/\\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();\nconst mesSiguiente = (k, n) => {\n  let y = Number(k.slice(0, 4));\n  let m = Number(k.slice(5, 7)) + n;\n  while (m > 12) { m -= 12; y += 1; }\n  while (m < 1) { m += 12; y -= 1; }\n  return y + '-' + String(m).padStart(2, '0');\n};\n\n// ---- Datos ----\n// Importes en EUROS (total_eur): nunca se suman monedas distintas. Filas antiguas en EUR sin\n// total_eur usan el total; una factura en otra moneda sin tipo de cambio no se incluye.\nconst enEuros = (f) => (typeof f.total_eur === 'number' && Number.isFinite(f.total_eur) ? f.total_eur\n  : (!f.moneda || f.moneda === 'EUR') && typeof f.total === 'number' ? f.total : null);\nconst filas = $input.all().map((i) => i.json)\n  .filter((f) => f && f.id !== undefined && f.id !== null && f.usuario_id === 'default' && (p.cliente_id === null || p.cliente_id === undefined || f.cliente_id === p.cliente_id))\n  .filter((f) => enEuros(f) !== null)\n  .map((f) => ({ ...f, total: enEuros(f) }));\nconst validas = filas.filter((f) => !EXCLUIDOS.includes(f.estado) && typeof f.fecha_emision === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(f.fecha_emision));\nconst periodo = validas.filter((f) => f.fecha_emision >= desde && f.fecha_emision <= hasta);\n\n// ---- 1. Suscripciones y contratos activos ----\n// Activo: la última factura del periodo no es posterior a la referencia y han pasado como\n// mucho intervalo + margen días (margen = mitad del intervalo, entre 10 y 45 días).\nconst INTERVALO = { semanal: 7, mensual: 31, bimestral: 62, trimestral: 92, semestral: 183, anual: 366 };\nconst margen = (d) => Math.max(10, Math.min(45, Math.round(d / 2)));\nconst rec = calcularRecurrentes(periodo);\nconst activos = [];\nconst inactivos = [];\nconst sinPeriodicidad = [];\nfor (const it of rec.items) {\n  const f = it.factura;\n  if (!it.veces) { sinPeriodicidad.push(f.proveedor); continue; }\n  const d = diasEntre(f.fecha_emision, referencia);\n  const lim = INTERVALO[f.periodicidad] + margen(INTERVALO[f.periodicidad]);\n  (d >= 0 && d <= lim ? activos : inactivos).push({ ...it, dias: d });\n}\nactivos.sort((a, b) => b.mensualC - a.mensualC || String(a.factura.proveedor).localeCompare(String(b.factura.proveedor)));\nconst actMensualC = activos.reduce((s, x) => s + x.mensualC, 0);\nconst actAnualC = activos.reduce((s, x) => s + x.anualC, 0);\nconst vistaRec = (x) => ({\n  proveedor: x.factura.proveedor,\n  proveedor_norm: x.clave,\n  categoria: x.factura.categoria,\n  subcategoria: x.factura.subcategoria || null,\n  tipo_gasto: x.factura.tipo_gasto,\n  periodicidad: x.factura.periodicidad,\n  ultimo_importe: eur(x.importeC),\n  coste_mensual: eur(x.mensualC),\n  coste_anual: eur(x.anualC),\n  ultima_fecha: x.factura.fecha_emision,\n  dias_desde_ultima: x.dias,\n});\n\n// ---- 2. Solapes entre suscripciones activas ----\n// Mismo tipo de servicio (palabras clave en proveedor, subcategoría o conceptos) o misma subcategoría.\nconst SERVICIOS = [\n  { clave: 'musica', nombre: 'música en streaming', palabras: ['spotify', 'apple music', 'tidal', 'deezer', 'amazon music', 'youtube music', 'qobuz', 'napster', 'musica'] },\n  { clave: 'video', nombre: 'vídeo en streaming', palabras: ['netflix', 'hbo', 'hbo max', 'disney', 'prime video', 'filmin', 'movistar plus', 'skyshowtime', 'atresplayer', 'dazn', 'apple tv', 'plataforma de video'] },\n  { clave: 'nube', nombre: 'almacenamiento en la nube', palabras: ['icloud', 'google one', 'dropbox', 'onedrive', 'almacenamiento en la nube'] },\n  { clave: 'gimnasio', nombre: 'gimnasio', palabras: ['basic fit', 'altafit', 'mcfit', 'vivagym', 'synergym', 'anytime fitness', 'fitness park', 'gimnasio'] },\n  { clave: 'juegos', nombre: 'suscripción de videojuegos', palabras: ['playstation plus', 'xbox game pass', 'game pass', 'nintendo switch online', 'ea play', 'ubisoft plus'] },\n];\nconst conceptos = (f) => { try { return (JSON.parse(f.lineas_json || '[]') || []).map((l) => (l && l.descripcion) || '').join(' '); } catch (e) { return ''; } };\nconst subs = activos.filter((x) => x.factura.tipo_gasto === 'suscripcion').map((x) => {\n  const texto = ' ' + norm([x.factura.proveedor, x.factura.subcategoria, conceptos(x.factura)].join(' ')) + ' ';\n  const serv = SERVICIOS.find((s) => s.palabras.some((w) => texto.includes(' ' + w + ' ')));\n  return { ...x, servicio: serv || null, subNorm: norm(x.factura.subcategoria) || null };\n});\nconst padre = subs.map((_, i) => i);\nconst raiz = (i) => (padre[i] === i ? i : (padre[i] = raiz(padre[i])));\nfor (let i = 0; i < subs.length; i += 1) {\n  for (let j = i + 1; j < subs.length; j += 1) {\n    const mismoServ = subs[i].servicio && subs[j].servicio && subs[i].servicio.clave === subs[j].servicio.clave;\n    const mismaSub = subs[i].subNorm && subs[i].subNorm === subs[j].subNorm;\n    if (mismoServ || mismaSub) padre[raiz(i)] = raiz(j);\n  }\n}\nconst gruposSolape = {};\nsubs.forEach((s, i) => { const r = raiz(i); (gruposSolape[r] = gruposSolape[r] || []).push(s); });\nconst solapes = Object.values(gruposSolape).filter((g) => g.length >= 2).map((g) => {\n  g.sort((a, b) => b.mensualC - a.mensualC || String(a.factura.proveedor).localeCompare(String(b.factura.proveedor)));\n  const conServ = g.find((x) => x.servicio);\n  const servicio = conServ ? conServ.servicio.nombre : (g[0].factura.subcategoria || 'el mismo servicio');\n  // Se conserva la más cara; el ahorro es el coste de las demás (con dos, el de la más barata).\n  const resto = g.slice(1);\n  return { servicio, items: g, ahorroMensualC: resto.reduce((s, x) => s + x.mensualC, 0), ahorroAnualC: resto.reduce((s, x) => s + x.anualC, 0) };\n}).sort((a, b) => b.ahorroAnualC - a.ahorroAnualC);\n\n// ---- 3. Subidas de precio en recurrentes activos (última vs anterior del mismo proveedor_norm) ----\nconst subidas = activos.filter((x) => x.anterior && x.importeC > centimos(x.anterior.total)).map((x) => {\n  const antC = centimos(x.anterior.total);\n  const difC = x.importeC - antC;\n  const anual = difC * x.veces;\n  return { x, antC, difC, pct: pctDecimas(difC, antC), anualC: anual, mensualC: Math.round(anual / 12) };\n}).sort((a, b) => b.anualC - a.anualC);\n\n// ---- 4. Categorías que crecen: último mes completo con datos vs media de los 3 anteriores ----\n// Mes completo = su último día es <= referencia (y no anterior al mes de \"desde\"). La media\n// usa todas las facturas válidas (aunque queden antes de \"desde\"). Si la media es 0 no se\n// considera crecimiento (sería una categoría nueva). Umbral: +25 % y al menos +10 €.\nconst UMBRAL_PCT = 25;\nconst MINIMO_C = 1000;\nconst gastoMes = {};\nfor (const f of validas) {\n  const k = f.fecha_emision.slice(0, 7);\n  const c = f.categoria || 'Otros';\n  gastoMes[k] = gastoMes[k] || {};\n  gastoMes[k][c] = (gastoMes[k][c] || 0) + centimos(f.total);\n}\nconst ultimoDiaMes = (k) => aFecha(Date.UTC(Number(k.slice(0, 4)), Number(k.slice(5, 7)), 0));\nlet mesAnalizado = null;\nfor (let k = referencia.slice(0, 7); k >= desde.slice(0, 7); k = mesSiguiente(k, -1)) {\n  if (ultimoDiaMes(k) > referencia) continue;\n  if (gastoMes[k] && Object.values(gastoMes[k]).some((v) => v > 0)) { mesAnalizado = k; break; }\n}\nconst crecen = [];\nlet mesesPrevios = [];\nif (mesAnalizado) {\n  mesesPrevios = [mesSiguiente(mesAnalizado, -3), mesSiguiente(mesAnalizado, -2), mesSiguiente(mesAnalizado, -1)];\n  for (const [cat, gC] of Object.entries(gastoMes[mesAnalizado])) {\n    const sumaPrev = mesesPrevios.reduce((s, k) => s + ((gastoMes[k] || {})[cat] || 0), 0);\n    const mediaC = Math.round(sumaPrev / 3);\n    const difC = gC - mediaC;\n    if (mediaC > 0 && difC >= MINIMO_C && difC * 100 >= UMBRAL_PCT * mediaC) {\n      crecen.push({ categoria: cat, gastoC: gC, mediaC, difC, pct: pctDecimas(difC, mediaC) });\n    }\n  }\n  crecen.sort((a, b) => b.difC - a.difC);\n}\n\n// ---- 5. Gasto hormiga: >= 5 compras puntuales < 15 € en 30 días en la misma categoría ----\nconst HORMIGA_MAX_C = 1500;\nconst HORMIGA_MIN = 5;\nconst HORMIGA_DIAS = 30;\nconst pequenas = {};\nfor (const f of periodo.filter((x) => x.tipo_gasto === 'puntual' && centimos(x.total) > 0 && centimos(x.total) < HORMIGA_MAX_C).sort(ordenFecha)) {\n  const c = f.categoria || 'Otros';\n  (pequenas[c] = pequenas[c] || []).push(f);\n}\nconst hormiga = [];\nfor (const [cat, lista] of Object.entries(pequenas)) {\n  let mejor = null;\n  let i = 0;\n  for (let j = 0; j < lista.length; j += 1) {\n    while (diasEntre(lista[i].fecha_emision, lista[j].fecha_emision) > HORMIGA_DIAS - 1) i += 1;\n    const n = j - i + 1;\n    if (n >= HORMIGA_MIN && (!mejor || n > mejor.num)) {\n      const v = lista.slice(i, j + 1);\n      mejor = { categoria: cat, num: n, totalC: v.reduce((s, f) => s + centimos(f.total), 0), desde: v[0].fecha_emision, hasta: v[v.length - 1].fecha_emision };\n    }\n  }\n  if (mejor) hormiga.push(mejor);\n}\nhormiga.sort((a, b) => b.totalC - a.totalC);\n\n// ---- 6. Facturas a punto de vencer: vencimiento entre hoy y hoy + 15 días ----\nconst limiteVenc = aFecha(aMs(hoy) + 15 * DIA);\nconst vencimientos = validas\n  .filter((f) => typeof f.fecha_vencimiento === 'string' && f.fecha_vencimiento >= hoy && f.fecha_vencimiento <= limiteVenc)\n  .sort((a, b) => (a.fecha_vencimiento < b.fecha_vencimiento ? -1 : a.fecha_vencimiento > b.fecha_vencimiento ? 1 : a.id - b.id))\n  .map((f) => ({ id: f.id, proveedor: f.proveedor, numero: f.numero, totalC: centimos(f.total), fecha_vencimiento: f.fecha_vencimiento, dias: diasEntre(hoy, f.fecha_vencimiento) }));\n\n// ---- Resumen del periodo (para las recomendaciones \"info\") ----\nconst totalC = periodo.reduce((s, f) => s + centimos(f.total), 0);\nconst porCat = {};\nfor (const f of periodo) { const c = f.categoria || 'Otros'; porCat[c] = (porCat[c] || 0) + centimos(f.total); }\nconst topCat = Object.entries(porCat).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || null;\nconst porProv = {};\nfor (const f of [...periodo].sort(ordenFecha)) {\n  const k = claveProveedor(f);\n  const prev = porProv[k] || { c: 0, n: 0 };\n  porProv[k] = { nombre: f.proveedor, c: prev.c + centimos(f.total), n: prev.n + 1 };\n}\nconst topProv = Object.values(porProv).sort((a, b) => b.c - a.c || String(a.nombre).localeCompare(String(b.nombre)))[0] || null;\nconst diasPeriodo = diasEntre(desde, hasta) + 1;\nconst antHasta = aFecha(aMs(desde) - DIA);\nconst antDesde = aFecha(aMs(desde) - diasPeriodo * DIA);\nconst antC = validas.filter((f) => f.fecha_emision >= antDesde && f.fecha_emision <= antHasta).reduce((s, f) => s + centimos(f.total), 0);\n\n// ---- Candidatos de recomendación (dato = texto con cifras ya formateadas) ----\nconst ACCION = {\n  solape: 'Si no usas los dos servicios por igual, quédate con uno y cancela el otro.',\n  subida: 'Revisa si te compensa el nuevo precio o si hay un plan más barato que te encaje.',\n  crece: 'Mira qué ha cambiado ese mes para saber si es algo puntual o un gasto que se queda.',\n  hormiga: 'Son compras pequeñas, pero juntas suman: plantéate agruparlas o reducirlas.',\n  vencimiento: 'Comprueba que tienes saldo en la cuenta de cargo para evitar recargos o cortes.',\n  suscripciones: 'Repasa la lista y da de baja lo que ya no uses.',\n  info: 'Es un dato orientativo para saber hacia dónde va tu dinero.',\n};\nconst PRIORIDAD_TIPO = { solape: 1, subida: 2, vencimiento: 3, hormiga: 4, crece: 5, suscripciones: 6, info: 7 };\nconst cand = [];\nconst nuevo = (tipo, titulo_base, dato, ahorroMensualC, ahorroAnualC) => cand.push({ tipo, titulo_base, dato, ahorroMensualC: ahorroMensualC || 0, ahorroAnualC: ahorroAnualC || 0 });\n\nfor (const s of solapes) {\n  const lista = s.items.map((x) => nombreCorto(x.factura.proveedor) + ' (' + fmtEur(x.mensualC) + '/mes)');\n  const quedan = nombreCorto(s.items[0].factura.proveedor);\n  nuevo('solape', (s.items.length === 2 ? 'Pagas dos veces por ' : 'Pagas varias veces por ') + s.servicio,\n    lista.slice(0, -1).join(', ') + ' y ' + lista[lista.length - 1] + ' son suscripciones activas de ' + s.servicio\n      + '. Quedándote solo con ' + quedan + ' ahorras ' + fmtEur(s.ahorroMensualC) + '/mes (' + fmtEur(s.ahorroAnualC) + '/año).',\n    s.ahorroMensualC, s.ahorroAnualC);\n}\nfor (const s of subidas) {\n  const f = s.x.factura;\n  const porPeriodo = s.x.veces === 12 ? '' : ' por factura ' + f.periodicidad;\n  nuevo('subida', nombreCorto(f.proveedor) + ' ha subido de precio',\n    nombreCorto(f.proveedor) + ' ha pasado de ' + fmtEur(s.antC) + ' (' + fmtFecha(s.x.anterior.fecha_emision) + ') a ' + fmtEur(s.x.importeC)\n      + ' (' + fmtFecha(f.fecha_emision) + '): +' + fmtEur(s.difC) + porPeriodo + ' (+' + fmtPct(s.pct) + '), es decir +' + fmtEur(s.mensualC)\n      + '/mes y +' + fmtEur(s.anualC) + '/año.',\n    s.mensualC, s.anualC);\n}\nif (vencimientos.length) {\n  const cuando = (d) => (d === 0 ? 'hoy' : d === 1 ? 'mañana' : 'en ' + d + ' días');\n  const partes = vencimientos.map((v) => nombreCorto(v.proveedor) + ': ' + fmtEur(v.totalC) + ' vence el ' + fmtFecha(v.fecha_vencimiento) + ' (' + cuando(v.dias) + ')');\n  nuevo('vencimiento', vencimientos.length === 1 ? nombreCorto(vencimientos[0].proveedor) + ' vence pronto' : 'Tienes facturas a punto de vencer', partes.join('; ') + '.');\n}\nfor (const h of hormiga) {\n  nuevo('hormiga', 'Muchas compras pequeñas en ' + h.categoria,\n    h.num + ' compras de menos de ' + fmtEur(HORMIGA_MAX_C) + ' en ' + h.categoria + ' entre el ' + fmtFecha(h.desde) + ' y el ' + fmtFecha(h.hasta) + ', que suman ' + fmtEur(h.totalC) + '.');\n}\nfor (const c of crecen) {\n  nuevo('crece', 'Sube el gasto en ' + c.categoria,\n    c.categoria + ': ' + fmtEur(c.gastoC) + ' en ' + nombreMes(mesAnalizado) + ' frente a una media de ' + fmtEur(c.mediaC) + ' al mes entre '\n      + MESES[Number(mesesPrevios[0].slice(5, 7)) - 1] + ' y ' + nombreMes(mesesPrevios[2]) + ' (+' + fmtEur(c.difC) + ', +' + fmtPct(c.pct) + ').');\n}\nif (activos.length) {\n  const lista = activos.map((x) => nombreCorto(x.factura.proveedor) + ' ' + fmtEur(x.mensualC) + '/mes');\n  nuevo('suscripciones', 'Tus suscripciones y contratos activos',\n    'Tienes ' + activos.length + ' suscripciones y contratos activos que cuestan ' + fmtEur(actMensualC) + '/mes (' + fmtEur(actAnualC) + '/año): ' + lista.join(', ') + '.');\n}\ncand.sort((a, b) => b.ahorroAnualC - a.ahorroAnualC || PRIORIDAD_TIPO[a.tipo] - PRIORIDAD_TIPO[b.tipo]);\n// Relleno con datos del resumen si hay menos de 3 (sin ahorros inventados).\nif (cand.length < 3 && topCat && totalC > 0) {\n  nuevo('info', 'Tu mayor gasto: ' + topCat[0], topCat[0] + ' suma ' + fmtEur(topCat[1]) + ' entre el ' + fmtFecha(desde) + ' y el ' + fmtFecha(hasta)\n    + ', el ' + fmtPct(pctDecimas(topCat[1], totalC)) + ' de tu gasto total (' + fmtEur(totalC) + ').');\n}\nif (cand.length < 3 && totalC > 0) {\n  const difC = totalC - antC;\n  const signo = difC >= 0 ? '+' : '';\n  nuevo('info', 'Comparación con el periodo anterior', antC > 0\n    ? 'Has gastado ' + fmtEur(totalC) + ' entre el ' + fmtFecha(desde) + ' y el ' + fmtFecha(hasta) + ', frente a ' + fmtEur(antC)\n      + ' en el periodo anterior de la misma duración (' + signo + fmtEur(difC) + ', ' + signo + fmtPct(pctDecimas(difC, antC)) + ').'\n    : 'Has gastado ' + fmtEur(totalC) + ' entre el ' + fmtFecha(desde) + ' y el ' + fmtFecha(hasta) + '; no hay gasto registrado en el periodo anterior de la misma duración.');\n}\nif (cand.length < 3 && topProv && totalC > 0) {\n  nuevo('info', 'Donde más gastas: ' + nombreCorto(topProv.nombre), nombreCorto(topProv.nombre) + ' acumula ' + fmtEur(topProv.c) + ' en ' + topProv.n\n    + (topProv.n === 1 ? ' factura' : ' facturas') + ' entre el ' + fmtFecha(desde) + ' y el ' + fmtFecha(hasta) + '.');\n}\nif (!cand.length) nuevo('info', 'Aún no hay datos suficientes', 'No hay facturas válidas entre el ' + fmtFecha(desde) + ' y el ' + fmtFecha(hasta) + '.');\n\nconst candidatos = cand.slice(0, 6).map((c, i) => ({\n  id: 'r' + (i + 1),\n  tipo: c.tipo,\n  titulo_base: c.titulo_base,\n  dato: c.dato,\n  ahorro_mensual: eur(c.ahorroMensualC),\n  ahorro_anual: eur(c.ahorroAnualC),\n  ahorro_mensual_texto: c.ahorroMensualC ? fmtEur(c.ahorroMensualC) + '/mes' : null,\n  ahorro_anual_texto: c.ahorroAnualC ? fmtEur(c.ahorroAnualC) + '/año' : null,\n  plantilla: c.dato + ' ' + ACCION[c.tipo],\n}));\n\nconst hallazgos = {\n  referencia,\n  suscripciones_activas: { num: activos.length, coste_mensual: eur(actMensualC), coste_anual: eur(actAnualC), items: activos.map(vistaRec), inactivas: inactivos.map(vistaRec), sin_periodicidad: sinPeriodicidad },\n  solapes: solapes.map((s) => ({ servicio: s.servicio, suscripciones: s.items.map((x) => ({ proveedor: x.factura.proveedor, coste_mensual: eur(x.mensualC), coste_anual: eur(x.anualC) })), se_mantiene: s.items[0].factura.proveedor, ahorro_mensual: eur(s.ahorroMensualC), ahorro_anual: eur(s.ahorroAnualC) })),\n  subidas_precio: subidas.map((s) => ({ proveedor: s.x.factura.proveedor, proveedor_norm: s.x.clave, periodicidad: s.x.factura.periodicidad, importe_anterior: eur(s.antC), fecha_anterior: s.x.anterior.fecha_emision, importe_actual: eur(s.x.importeC), fecha_actual: s.x.factura.fecha_emision, diferencia: eur(s.difC), pct: s.pct / 10, impacto_mensual: eur(s.mensualC), impacto_anual: eur(s.anualC) })),\n  categorias_crecen: { mes: mesAnalizado, meses_previos: mesesPrevios, umbral_pct: UMBRAL_PCT, minimo: eur(MINIMO_C), items: crecen.map((c) => ({ categoria: c.categoria, gasto_mes: eur(c.gastoC), media_3_meses: eur(c.mediaC), diferencia: eur(c.difC), pct: c.pct / 10 })) },\n  gasto_hormiga: hormiga.map((h) => ({ categoria: h.categoria, num: h.num, total: eur(h.totalC), desde: h.desde, hasta: h.hasta })),\n  vencimientos: vencimientos.map((v) => ({ id: v.id, proveedor: v.proveedor, numero: v.numero, total: eur(v.totalC), fecha_vencimiento: v.fecha_vencimiento, dias: v.dias })),\n  resumen: { total: eur(totalC), num_facturas: periodo.length, categoria_principal: topCat ? { categoria: topCat[0], total: eur(topCat[1]) } : null, periodo_anterior: { desde: antDesde, hasta: antHasta, total: eur(antC) } },\n};\nreturn [{ json: { generado: p.generado, desde, hasta, cliente_id: p.cliente_id ?? null, candidatos, hallazgos } }];\n"
+        }
+      },
+      {
+        "id": "e62b1119-78ac-470f-a65f-c3bafd28ebab",
+        "name": "Preparar petición Gemini",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1200,
+          200
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Petición a Gemini para REDACTAR (no calcular) las recomendaciones.\n// Modelos: mismos que la Ingesta (cámbialos aquí si cambian allí).\nconst MODELO = 'gemini-3.5-flash-lite';\nconst MODELO_RESPALDO = 'gemini-3.5-flash';\n\nconst { candidatos } = $input.first().json;\nconst entrada = candidatos.map((c) => ({\n  id: c.id,\n  tipo: c.tipo,\n  titulo_base: c.titulo_base,\n  dato: c.dato,\n  ahorro_mensual: c.ahorro_mensual_texto,\n  ahorro_anual: c.ahorro_anual_texto,\n}));\n\nconst instrucciones = [\n  'Redactas recomendaciones de ahorro personal en español de España a partir de candidatos YA CALCULADOS.',\n  'Para cada candidato devuelve su mismo \"id\", un \"titulo\" (máximo 70 caracteres) y un \"texto\" (1 a 3 frases, máximo 320 caracteres).',\n  'Tono: claro, directo y cercano (tutea), sin sermones, sin moralina, sin exclamaciones ni emojis.',\n  'REGLA ESTRICTA DE CIFRAS: no escribas ningún número (importe, porcentaje, fecha, día, mes en cifra ni cantidad) que no aparezca literalmente en \"dato\", \"ahorro_mensual\" o \"ahorro_anual\" de ESE MISMO candidato. Copia las cifras exactamente con el mismo formato (coma decimal y símbolo €). No calcules, no sumes, no redondees, no conviertas y no escribas números con letras. Si dudas, no pongas la cifra.',\n  'ORTOGRAFÍA: escribe en español correcto con todas sus tildes y eñes (música, próximo, suscripción, electrónica, energía, también, más, año...). No omitas ninguna tilde aunque el dato de entrada no la lleve.',\n  'NOMBRES DE PROVEEDOR: cópialos exactamente como aparecen en \"dato\" o \"titulo_base\" (mismas mayúsculas, signos y sufijos); no los traduzcas, abrevies, corrijas ni les añadas tildes.',\n  'No inventes proveedores, servicios ni datos que no estén en el candidato. No prometas ahorros en los candidatos sin \"ahorro_mensual\" (tipos vencimiento, crece, suscripciones, hormiga e info): en esos casos sugiere una acción concreta.',\n  'El titulo puede reutilizar \"titulo_base\" mejorándolo; el texto debe explicar el dato y proponer una acción concreta.',\n  'Devuelve exactamente un elemento por candidato.',\n].join('\\n');\n\nconst responseSchema = {\n  type: 'OBJECT',\n  properties: {\n    recomendaciones: {\n      type: 'ARRAY',\n      items: {\n        type: 'OBJECT',\n        properties: {\n          id: { type: 'STRING', enum: candidatos.map((c) => c.id) },\n          titulo: { type: 'STRING' },\n          texto: { type: 'STRING' },\n        },\n        required: ['id', 'titulo', 'texto'],\n        propertyOrdering: ['id', 'titulo', 'texto'],\n      },\n    },\n  },\n  required: ['recomendaciones'],\n};\n\nconst peticion = {\n  contents: [{ role: 'user', parts: [{ text: instrucciones }, { text: 'CANDIDATOS (JSON):\\n' + JSON.stringify(entrada) }] }],\n  // Sin temperature: en Gemini 3 Google recomienda el valor por defecto.\n  generationConfig: {\n    responseMimeType: 'application/json',\n    responseSchema,\n    thinkingConfig: { thinkingLevel: 'low' },\n  },\n};\nreturn [{ json: { modelo: MODELO, modelo_respaldo: MODELO_RESPALDO, peticion } }];\n"
+        }
+      },
+      {
+        "id": "37c30b5c-64db-44b0-b578-0b62ba9e29dc",
+        "name": "Gemini redactar",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1440,
+          200
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $json.modelo + ':generateContent' }}",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googlePalmApi",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.peticion) }}",
+          "options": {
+            "timeout": 120000
+          }
+        },
+        "credentials": {
+          "googlePalmApi": {
+            "id": "pGeL1IfQ1fQkcUwW",
+            "name": "Google Gemini(PaLM) Api account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "ba3a1d84-5225-4caf-baf8-b92e09145254",
+        "name": "¿Falló el modelo principal?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1680,
+          200
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "object",
+                  "operation": "exists",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "7c07a885-729a-4cfc-bb5b-33df9753c042",
+        "name": "Gemini respaldo",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1920,
+          100
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Preparar petición Gemini').first().json.modelo_respaldo + ':generateContent' }}",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googlePalmApi",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($('Preparar petición Gemini').first().json.peticion) }}",
+          "options": {
+            "timeout": 120000
+          }
+        },
+        "credentials": {
+          "googlePalmApi": {
+            "id": "pGeL1IfQ1fQkcUwW",
+            "name": "Google Gemini(PaLM) Api account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "16fd0eee-6988-4688-b0aa-801b7776b04a",
+        "name": "Controlar redacción",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2160,
+          200
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Control de la redacción: cada número del título y del texto de Gemini debe estar en el\n// \"dato\" o en los ahorros de SU candidato (normalizando 1.234,56 / 1234.56 / %). Si no,\n// o si Gemini falla, se usa la plantilla determinista. El asesor nunca falla por el LLM.\nconst a = $('Analizar y proponer').first().json;\nconst r = $input.first().json || {};\n\n// ---- Números: todas las interpretaciones posibles de cada cifra, en centésimas ----\nconst interpretaciones = (tok) => {\n  const out = new Set();\n  const add = (s) => { const v = Number(s); if (Number.isFinite(v)) out.add(Math.round(v * 100)); };\n  const tieneC = tok.includes(',');\n  const tieneP = tok.includes('.');\n  if (tieneC && tieneP) {\n    const dec = tok.lastIndexOf(',') > tok.lastIndexOf('.') ? ',' : '.';\n    const mil = dec === ',' ? '.' : ',';\n    add(tok.split(mil).join('').replace(dec, '.'));\n  } else if (tieneC || tieneP) {\n    const partes = tok.split(tieneC ? ',' : '.');\n    if (partes.length === 2) add(partes.join('.')); // separador decimal\n    if (partes.slice(1).every((x) => x.length === 3)) add(partes.join('')); // separador de miles\n  } else add(tok);\n  return [...out];\n};\nconst numeros = (s) => (String(s || '').match(/\\d+(?:[.,]\\d+)*/g) || []).map((t) => ({ t, v: interpretaciones(t) }));\nconst permitidos = (c) => {\n  const set = new Set();\n  for (const s of [c.dato, c.titulo_base, c.ahorro_mensual_texto, c.ahorro_anual_texto]) for (const n of numeros(s)) n.v.forEach((x) => set.add(x));\n  for (const x of [c.ahorro_mensual, c.ahorro_anual]) if (typeof x === 'number') set.add(Math.round(x * 100));\n  return set;\n};\nconst noCuadran = (texto, set) => numeros(texto).filter((n) => !n.v.some((x) => set.has(x))).map((n) => n.t);\n\n// ---- Tildes: corrección determinista de una lista corta de palabras que Gemini a veces escribe sin tilde ----\n// Solo palabras completas (también plural/femenino), conservando mayúsculas. No toca cifras, así que el\n// control de cifras no cambia. Los nombres de proveedor que contengan estas palabras tal cual no se tocan.\nconst TILDES = {\n  musica: 'música', musicas: 'músicas',\n  proximo: 'próximo', proxima: 'próxima', proximos: 'próximos', proximas: 'próximas',\n  suscripcion: 'suscripción',\n  electronica: 'electrónica', electronicas: 'electrónicas', electronico: 'electrónico', electronicos: 'electrónicos',\n  energia: 'energía', energias: 'energías',\n};\nconst PALABRA = /(?<![\\p{L}\\p{N}])\\p{L}+(?![\\p{L}\\p{N}])/gu;\nconst corregirTildes = (s, c) => {\n  // Palabras que aparecen literalmente en el dato o el título base (p. ej. dentro de un nombre de proveedor): se respetan.\n  const delDato = new Set(String((c.dato || '') + ' ' + (c.titulo_base || '')).match(PALABRA) || []);\n  return s.replace(PALABRA, (w) => {\n    const ok = TILDES[w.toLowerCase()];\n    if (!ok || delDato.has(w)) return w;\n    if (w.length > 1 && w === w.toUpperCase()) return ok.toUpperCase();\n    if (w[0] === w[0].toUpperCase()) return ok.charAt(0).toUpperCase() + ok.slice(1);\n    return ok;\n  });\n};\n\n// ---- Respuesta de Gemini ----\nlet llm = {};\nlet errorLlm = null;\nif (r.error) {\n  const msg = typeof r.error === 'string' ? r.error : (r.error.message || '');\n  errorLlm = 'Gemini no respondió: ' + String(msg).slice(0, 150);\n} else {\n  const cand = (r.candidates || [])[0];\n  const txt = cand && cand.content && Array.isArray(cand.content.parts) ? cand.content.parts.map((x) => x.text || '').join('') : '';\n  if (!txt) errorLlm = 'Gemini no devolvió texto (' + ((cand && cand.finishReason) || 'sin respuesta') + ').';\n  else {\n    try {\n      const d = JSON.parse(txt);\n      for (const x of (d && Array.isArray(d.recomendaciones) ? d.recomendaciones : [])) if (x && typeof x.id === 'string' && !llm[x.id]) llm[x.id] = x;\n    } catch (e) { errorLlm = 'La respuesta de Gemini no es un JSON válido.'; }\n  }\n}\n\nconst control = [];\nconst recomendaciones = a.candidatos.map((c) => {\n  const base = { id: c.id, tipo: c.tipo, dato: c.dato, ahorro_mensual: c.ahorro_mensual, ahorro_anual: c.ahorro_anual };\n  const plantilla = { ...base, titulo: c.titulo_base, texto: c.plantilla, redaccion: 'plantilla' };\n  const g = llm[c.id];\n  if (!g) { control.push({ id: c.id, motivo: errorLlm || 'Gemini no redactó esta recomendación.' }); return plantilla; }\n  const titulo = typeof g.titulo === 'string' ? g.titulo.trim() : '';\n  const texto = typeof g.texto === 'string' ? g.texto.trim() : '';\n  if (!titulo || !texto || titulo.length > 120 || texto.length > 600) { control.push({ id: c.id, motivo: 'Redacción vacía o demasiado larga.' }); return plantilla; }\n  const malos = noCuadran(titulo + ' ' + texto, permitidos(c));\n  if (malos.length) { control.push({ id: c.id, motivo: 'Cifras que no están en el dato.', cifras: malos }); return plantilla; }\n  return { ...base, titulo: corregirTildes(titulo, c), texto: corregirTildes(texto, c), redaccion: 'gemini' };\n});\n\nconst respuesta = {\n  generado: a.generado,\n  desde: a.desde,\n  hasta: a.hasta,\n  cliente_id: a.cliente_id ?? null,\n  recomendaciones,\n  hallazgos: a.hallazgos,\n  redaccion: {\n    modelo: r.error ? null : (r.modelVersion || null),\n    gemini: recomendaciones.filter((x) => x.redaccion === 'gemini').length,\n    plantilla: recomendaciones.filter((x) => x.redaccion === 'plantilla').length,\n    control,\n  },\n};\nreturn [{ json: { fecha: a.generado, desde: a.desde, hasta: a.hasta, cliente_id: a.cliente_id ?? null, json: JSON.stringify(respuesta), respuesta } }];\n"
+        }
+      },
+      {
+        "id": "39d56bd5-ec37-4024-bd91-ac02b56b568e",
+        "name": "Responder",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          3120,
+          300
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json.body) }}",
+          "options": {
+            "responseCode": "={{ $json.status }}"
+          }
+        }
+      },
+      {
+        "id": "85503871-3539-4143-9acc-30d24f1d5aa6",
+        "name": "Guardar recomendaciones",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          2400,
+          200
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "insert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "0LOu68SrmyMgKOIi",
+            "cachedResultName": "fact_recomendaciones"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "fecha": "={{ $json.fecha }}",
+              "desde": "={{ $json.desde }}",
+              "hasta": "={{ $json.hasta }}",
+              "json": "={{ $json.json }}",
+              "cliente_id": "={{ $json.cliente_id }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "fecha",
+                "displayName": "fecha",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "desde",
+                "displayName": "desde",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "hasta",
+                "displayName": "hasta",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "json",
+                "displayName": "json",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "cliente_id",
+                "displayName": "cliente_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "63aab107-d63c-42cf-987e-6ad5dfa875f3",
+        "name": "¿Responder al webhook?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2640,
+          200
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $('Parámetros').first().json.origen }}",
+                "rightValue": "webhook",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "1a965fad-a3ab-44bf-bdad-13167c04273c",
+        "name": "Preparar respuesta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2880,
+          100
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Respuesta del asesor (la fila guardada sustituye al item; se recupera del control).\nreturn [{ json: { status: 200, body: $('Controlar redacción').first().json.respuesta } }];\n"
+        }
+      },
+      {
+        "id": "e5c9f1bd-3d0d-4853-ab40-4806e499586f",
+        "name": "GET /recomendaciones",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          700
+        ],
+        "parameters": {
+          "httpMethod": "GET",
+          "path": "recomendaciones",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "webhookId": "d9b2fc04-70f2-42f9-96f6-14506a2bb1a3",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        }
+      },
+      {
+        "id": "b0209ec0-5e88-4df2-b9f3-77221c752162",
+        "name": "Leer última recomendación",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          240,
+          700
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "0LOu68SrmyMgKOIi",
+            "cachedResultName": "fact_recomendaciones"
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "c9bbe939-60b3-4a8f-9cb0-a90e0d41a409",
+        "name": "Última recomendación",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          700
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// GET /recomendaciones[?cliente_id=N]: última ejecución guardada del asesor (sin llamar a Gemini).\n// Con cliente_id, la última de ese cliente; sin él, la última de cualquiera (también las de «todos»).\nconst q = ($('GET /recomendaciones').first().json || {}).query || {};\nconst crudo = q.cliente_id === undefined || q.cliente_id === null ? '' : String(Array.isArray(q.cliente_id) ? q.cliente_id[0] : q.cliente_id).trim();\nif (crudo && !/^\\d{1,12}$/.test(crudo)) return [{ json: { status: 400, body: { error: 'Parámetros no válidos.', detalles: ['\"cliente_id\" debe ser un entero positivo.'] } } }];\nconst clienteId = crudo ? Number(crudo) : null;\nconst filas = $input.all().map((i) => i.json).filter((f) => f && f.id !== undefined && f.id !== null && (clienteId === null || f.cliente_id === clienteId));\nif (!filas.length) {\n  return [{ json: { status: 404, body: { error: clienteId === null ? 'Todavía no hay recomendaciones guardadas. Lanza POST /asesor.'\n    : `Todavía no hay recomendaciones guardadas para el cliente ${clienteId}. Lanza POST /asesor con cliente_id.` } } }];\n}\nconst f = filas.sort((x, y) => y.id - x.id)[0];\nlet datos;\ntry { datos = JSON.parse(f.json); } catch (e) { return [{ json: { status: 500, body: { error: 'La última recomendación guardada no es un JSON válido.', id: f.id } } }]; }\nreturn [{ json: { status: 200, body: { ...datos, cliente_id: f.cliente_id ?? datos.cliente_id ?? null, guardado: { id: f.id, fecha: f.fecha } } } }];\n"
+        }
+      },
+      {
+        "id": "8102e547-f57c-48ed-b0c9-00bbcd6da1ae",
+        "name": "Sticky Note 3a67cc55",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          0,
+          -200
+        ],
+        "parameters": {
+          "content": "## FACT — Asesor de gastos\nPOST /asesor (desde, hasta en cuerpo o query; por defecto últimos 12 meses) y GET /recomendaciones (última guardada, sin Gemini). Header Auth X-API-Key + CORS.\n\n- **Analizar y proponer**: TODAS las cifras (céntimos). Detectores: suscripciones activas, solapes, subidas, categorías que crecen, gasto hormiga, vencimientos. Bloque COMÚN Recurrentes idéntico al de FACT — API y FACT — Exportar Excel.\n- **Gemini** solo redacta (responseSchema). **Controlar redacción** comprueba que cada cifra está en el dato; si no, o si Gemini falla, plantilla.\n- **Schedule** día 1 a las 08:00: DESACTIVADO. Para usarlo, actívalo y vuelve a publicar.",
+          "color": 7,
+          "width": 900,
+          "height": 300
+        }
+      }
+    ],
+    "connections": {
+      "POST /asesor": {
+        "main": [
+          [
+            {
+              "node": "Parámetros",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parámetros": {
+        "main": [
+          [
+            {
+              "node": "¿Parámetros válidos?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Cada mes (día 1, 08:00)": {
+        "main": [
+          [
+            {
+              "node": "Parámetros",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Parámetros válidos?": {
+        "main": [
+          [
+            {
+              "node": "Leer facturas",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer facturas": {
+        "main": [
+          [
+            {
+              "node": "Analizar y proponer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Analizar y proponer": {
+        "main": [
+          [
+            {
+              "node": "Preparar petición Gemini",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar petición Gemini": {
+        "main": [
+          [
+            {
+              "node": "Gemini redactar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Gemini redactar": {
+        "main": [
+          [
+            {
+              "node": "¿Falló el modelo principal?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Falló el modelo principal?": {
+        "main": [
+          [
+            {
+              "node": "Gemini respaldo",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Controlar redacción",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Gemini respaldo": {
+        "main": [
+          [
+            {
+              "node": "Controlar redacción",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Controlar redacción": {
+        "main": [
+          [
+            {
+              "node": "Guardar recomendaciones",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Guardar recomendaciones": {
+        "main": [
+          [
+            {
+              "node": "¿Responder al webhook?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Responder al webhook?": {
+        "main": [
+          [
+            {
+              "node": "Preparar respuesta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar respuesta": {
+        "main": [
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GET /recomendaciones": {
+        "main": [
+          [
+            {
+              "node": "Leer última recomendación",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer última recomendación": {
+        "main": [
+          [
+            {
+              "node": "Última recomendación",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Última recomendación": {
+        "main": [
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "errorWorkflow": "V08lXHOvWDQal70V",
+      "timezone": "Europe/Madrid"
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "nodeGroups": [
+      {
+        "id": "b6df6d63-880f-4982-a3f5-95d8b4a09c1a",
+        "name": "Validar parámetros",
+        "nodeIds": [
+          "9aa42df9-0548-4534-97fb-1aef0f2940db",
+          "150d2627-3a82-4a53-bc1c-068f1f326362"
+        ],
+        "description": "Lee desde/hasta del cuerpo o la query (o del schedule); por defecto últimos 12 meses. Errores 400."
+      },
+      {
+        "id": "7c0869e9-7c89-4f94-a3f5-811449de8f66",
+        "name": "Calcular hallazgos",
+        "nodeIds": [
+          "254bd96b-4500-4e21-b6a1-e90e0fd75325",
+          "d649cff5-ba2e-4b7e-87f2-9e7ded47a3b9",
+          "e62b1119-78ac-470f-a65f-c3bafd28ebab"
+        ],
+        "description": "Detectores y candidatos en Code (céntimos); prepara la petición de redacción."
+      },
+      {
+        "id": "17e53bb8-c4ff-4606-9f27-bd1b61ca95c6",
+        "name": "Redacción con Gemini",
+        "nodeIds": [
+          "37c30b5c-64db-44b0-b578-0b62ba9e29dc",
+          "ba3a1d84-5225-4caf-baf8-b92e09145254",
+          "7c07a885-729a-4cfc-bb5b-33df9753c042",
+          "16fd0eee-6988-4688-b0aa-801b7776b04a"
+        ],
+        "description": "Gemini solo redacta; el control verifica las cifras y usa plantilla si no cuadran o si falla."
+      },
+      {
+        "id": "5e428734-d05d-42b0-bf77-0fb25ef0e26b",
+        "name": "Guardar y responder",
+        "nodeIds": [
+          "85503871-3539-4143-9acc-30d24f1d5aa6",
+          "63aab107-d63c-42cf-987e-6ad5dfa875f3",
+          "1a965fad-a3ab-44bf-bdad-13167c04273c"
+        ],
+        "description": "Guarda en fact_recomendaciones y responde solo si vino del webhook."
+      },
+      {
+        "id": "8e43498e-b3ad-4363-b1e8-5645939d3af5",
+        "name": "Última guardada",
+        "nodeIds": [
+          "b0209ec0-5e88-4df2-b9f3-77221c752162",
+          "c9bbe939-60b3-4a8f-9cb0-a90e0d41a409"
+        ],
+        "description": "GET /recomendaciones: última fila de fact_recomendaciones, sin Gemini (404 si no hay)."
+      }
+    ],
+    "pinData": null,
+    "versionId": "ba203865-8393-4de9-a276-337fb9081d16",
+    "activeVersionId": "ba203865-8393-4de9-a276-337fb9081d16",
+    "versionCounter": 5,
+    "triggerCount": 2,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-10-14T18:50:48.937Z",
+        "createdAt": "2026-10-14T18:50:48.937Z",
+        "role": "workflow:owner",
+        "workflowId": "Uf7N5EXv9D4UcqDV",
+        "projectId": "bZtIqKac0YRZrt14",
+        "project": {
+          "updatedAt": "2026-10-08T21:42:10.105Z",
+          "createdAt": "2026-10-08T21:41:04.349Z",
+          "id": "bZtIqKac0YRZrt14",
+          "name": "Jaime Gomez <tu-correo@ejemplo.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "bd591b97-d638-4c8a-9c0b-ccbab2197267"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Recomendaciones por cliente (cliente_id)",
+      "description": "Updated nodes: Controlar redacción, Guardar recomendaciones, Leer última recomendación, Última recomendación"
+    }
+  }
+]

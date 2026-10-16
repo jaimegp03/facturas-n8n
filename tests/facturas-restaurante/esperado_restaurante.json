@@ -1,0 +1,321 @@
+{
+  "cliente": {
+    "nombre": "TEST·Restaurante La Barraca del Puerto, S.L.",
+    "nif": "B96401278",
+    "dom": "Paseo Marítimo 14, 46011 Valencia",
+    "regimen": "general"
+  },
+  "facturas": [
+    {
+      "id": "01",
+      "archivo": "TEST_R01_pescado.pdf",
+      "proveedor": "TEST·Pescados Mar de Levante, S.L.",
+      "nif": "B41002338",
+      "numero": "PM-2026-18344",
+      "fecha": "2026-10-09",
+      "vence": "2026-10-23",
+      "pagada": null,
+      "tipo_factura": "completa",
+      "rectifica": null,
+      "bases": [
+        {
+          "base": 427.4,
+          "tipo_iva": 10,
+          "cuota_iva": 42.74,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        }
+      ],
+      "base_no_sujeta_o_exenta": 0.0,
+      "base_total": 427.4,
+      "cuota_iva_total": 42.74,
+      "cuota_re_total": 0.0,
+      "irpf_tipo": 0,
+      "irpf_cuota": 0.0,
+      "suplidos": 0.0,
+      "total_factura": 470.14,
+      "total_a_pagar": 470.14
+    },
+    {
+      "id": "02",
+      "archivo": "TEST_R02_bebidas.pdf",
+      "proveedor": "TEST·Distribuciones Bebidas Valencia, S.A.",
+      "nif": "A47001284",
+      "numero": "DB-26-091522",
+      "fecha": "2026-10-10",
+      "vence": "2026-11-09",
+      "pagada": null,
+      "tipo_factura": "completa",
+      "rectifica": null,
+      "bases": [
+        {
+          "base": 740.4,
+          "tipo_iva": 21,
+          "cuota_iva": 155.48,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        },
+        {
+          "base": 58.0,
+          "tipo_iva": 10,
+          "cuota_iva": 5.8,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        }
+      ],
+      "base_no_sujeta_o_exenta": 0.0,
+      "base_total": 798.4,
+      "cuota_iva_total": 161.28,
+      "cuota_re_total": 0.0,
+      "irpf_tipo": 0,
+      "irpf_cuota": 0.0,
+      "suplidos": 0.0,
+      "total_factura": 959.68,
+      "total_a_pagar": 959.68
+    },
+    {
+      "id": "03",
+      "archivo": "TEST_R03_carne.pdf",
+      "proveedor": "TEST·Carnes Selectas Meliá, S.L.",
+      "nif": "B80124456",
+      "numero": "CS-2026-6620",
+      "fecha": "2026-10-09",
+      "vence": "2026-10-24",
+      "pagada": null,
+      "tipo_factura": "completa",
+      "rectifica": null,
+      "bases": [
+        {
+          "base": 643.8,
+          "tipo_iva": 10,
+          "cuota_iva": 64.38,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        }
+      ],
+      "base_no_sujeta_o_exenta": 0.0,
+      "base_total": 643.8,
+      "cuota_iva_total": 64.38,
+      "cuota_re_total": 0.0,
+      "irpf_tipo": 0,
+      "irpf_cuota": 0.0,
+      "suplidos": 0.0,
+      "total_factura": 708.18,
+      "total_a_pagar": 708.18
+    },
+    {
+      "id": "04",
+      "archivo": "TEST_R04_verdura.pdf",
+      "proveedor": "TEST·Frutas y Verduras Huerta del Turia, S.L.",
+      "nif": "B52309879",
+      "numero": "FV-2026-3105",
+      "fecha": "2026-10-11",
+      "vence": null,
+      "pagada": "2026-10-11",
+      "tipo_factura": "completa",
+      "rectifica": null,
+      "bases": [
+        {
+          "base": 119.6,
+          "tipo_iva": 10,
+          "cuota_iva": 11.96,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        },
+        {
+          "base": 96.5,
+          "tipo_iva": 4,
+          "cuota_iva": 3.86,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        }
+      ],
+      "base_no_sujeta_o_exenta": 0.0,
+      "base_total": 216.1,
+      "cuota_iva_total": 15.82,
+      "cuota_re_total": 0.0,
+      "irpf_tipo": 0,
+      "irpf_cuota": 0.0,
+      "suplidos": 0.0,
+      "total_factura": 231.92,
+      "total_a_pagar": 231.92
+    },
+    {
+      "id": "05",
+      "archivo": "TEST_R05_pan.pdf",
+      "proveedor": "TEST·Obrador Horno Viejo, S.C.",
+      "nif": "J99153207",
+      "numero": "OH-26-0411",
+      "fecha": "2026-10-11",
+      "vence": null,
+      "pagada": "2026-10-11",
+      "tipo_factura": "completa",
+      "rectifica": null,
+      "bases": [
+        {
+          "base": 46.15,
+          "tipo_iva": 4,
+          "cuota_iva": 1.85,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        }
+      ],
+      "base_no_sujeta_o_exenta": 0.0,
+      "base_total": 46.15,
+      "cuota_iva_total": 1.85,
+      "cuota_re_total": 0.0,
+      "irpf_tipo": 0,
+      "irpf_cuota": 0.0,
+      "suplidos": 0.0,
+      "total_factura": 48.0,
+      "total_a_pagar": 48.0
+    },
+    {
+      "id": "06",
+      "archivo": "TEST_R06_cash.jpg",
+      "proveedor": "TEST·Cash & Carry Valencia Norte, S.A.",
+      "nif": "A33218090",
+      "numero": "T-2026-77231",
+      "fecha": "2026-10-10",
+      "vence": null,
+      "pagada": "2026-10-10",
+      "tipo_factura": "simplificada",
+      "rectifica": null,
+      "bases": [
+        {
+          "base": 71.4,
+          "tipo_iva": 21,
+          "cuota_iva": 14.99,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        }
+      ],
+      "base_no_sujeta_o_exenta": 0.0,
+      "base_total": 71.4,
+      "cuota_iva_total": 14.99,
+      "cuota_re_total": 0.0,
+      "irpf_tipo": 0,
+      "irpf_cuota": 0.0,
+      "suplidos": 0.0,
+      "total_factura": 86.39,
+      "total_a_pagar": 86.39
+    },
+    {
+      "id": "07",
+      "archivo": "TEST_R07_gas.pdf",
+      "proveedor": "TEST·Gases Butano Levante, S.L.",
+      "nif": "B11807641",
+      "numero": "GBL-26-5120",
+      "fecha": "2026-10-10",
+      "vence": null,
+      "pagada": "2026-10-10",
+      "tipo_factura": "completa",
+      "rectifica": null,
+      "bases": [
+        {
+          "base": 124.5,
+          "tipo_iva": 21,
+          "cuota_iva": 26.15,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        }
+      ],
+      "base_no_sujeta_o_exenta": 0.0,
+      "base_total": 124.5,
+      "cuota_iva_total": 26.15,
+      "cuota_re_total": 0.0,
+      "irpf_tipo": 0,
+      "irpf_cuota": 0.0,
+      "suplidos": 0.0,
+      "total_factura": 150.65,
+      "total_a_pagar": 150.65
+    },
+    {
+      "id": "08",
+      "archivo": "TEST_R08_bebidas.pdf",
+      "proveedor": "TEST·Distribuciones Bebidas Valencia, S.A.",
+      "nif": "A47001284",
+      "numero": "R-DB-26-0113",
+      "fecha": "2026-10-11",
+      "vence": null,
+      "pagada": null,
+      "tipo_factura": "rectificativa",
+      "rectifica": "DB-26-091522",
+      "bases": [
+        {
+          "base": -96.0,
+          "tipo_iva": 21,
+          "cuota_iva": -20.16,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        }
+      ],
+      "base_no_sujeta_o_exenta": 0.0,
+      "base_total": -96.0,
+      "cuota_iva_total": -20.16,
+      "cuota_re_total": 0.0,
+      "irpf_tipo": 0,
+      "irpf_cuota": 0.0,
+      "suplidos": 0.0,
+      "total_factura": -116.16,
+      "total_a_pagar": -116.16
+    },
+    {
+      "id": "09",
+      "archivo": "TEST_R09_limpieza.pdf",
+      "proveedor": "TEST·Higiene Profesional Valencia, S.L.",
+      "nif": "B66093121",
+      "numero": "HP-2026-2290",
+      "fecha": "2026-10-10",
+      "vence": "2026-10-30",
+      "pagada": null,
+      "tipo_factura": "completa",
+      "rectifica": null,
+      "bases": [
+        {
+          "base": 158.7,
+          "tipo_iva": 21,
+          "cuota_iva": 33.33,
+          "tipo_re": 0,
+          "cuota_re": 0.0
+        }
+      ],
+      "base_no_sujeta_o_exenta": 0.0,
+      "base_total": 158.7,
+      "cuota_iva_total": 33.33,
+      "cuota_re_total": 0.0,
+      "irpf_tipo": 0,
+      "irpf_cuota": 0.0,
+      "suplidos": 0.0,
+      "total_factura": 192.03,
+      "total_a_pagar": 192.03
+    },
+    {
+      "id": "10",
+      "archivo": "TEST_R10_vino_pt.pdf",
+      "proveedor": "TEST·Vinhos do Douro Lda",
+      "nif": "PT501964843",
+      "numero": "PT-2026-00418",
+      "fecha": "2026-10-09",
+      "vence": "2026-11-08",
+      "pagada": null,
+      "tipo_factura": "completa",
+      "rectifica": null,
+      "bases": [],
+      "base_no_sujeta_o_exenta": 492.0,
+      "base_total": 492.0,
+      "cuota_iva_total": 0.0,
+      "cuota_re_total": 0.0,
+      "irpf_tipo": 0,
+      "irpf_cuota": 0.0,
+      "suplidos": 0.0,
+      "total_factura": 492.0,
+      "total_a_pagar": 492.0
+    },
+    {
+      "id": "11",
+      "archivo": "TEST_R11_duplicada_de_pescado.pdf",
+      "duplicada_de": "TEST_R01_pescado.pdf"
+    }
+  ]
+}

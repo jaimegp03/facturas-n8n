@@ -1,0 +1,1320 @@
+[
+  {
+    "updatedAt": "2026-10-15T23:53:36.029Z",
+    "createdAt": "2026-10-14T17:31:26.633Z",
+    "id": "XsVbiul39k797Ury",
+    "name": "FACT — Ingesta",
+    "description": "POST /webhook/facturas: valida, deduplica por hash, extrae con Gemini (responseSchema), aplica reglas, valida importes, detecta posibles duplicadas, guarda original y fila en fact_facturas.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "43aa57cc-c220-4fb6-8bc9-f141a6bd340d",
+        "name": "Recibir facturas",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          300
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "facturas",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "webhookId": "6ab0f290-4b8f-4905-bbaa-2c727b3d0a41",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        }
+      },
+      {
+        "id": "c3e02faf-db52-4abf-b90a-2f5769e8ada3",
+        "name": "Leer categorías",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          240,
+          160
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "wUG04k8qKHE1fL8A",
+            "cachedResultName": "fact_categorias"
+          },
+          "returnAll": true
+        },
+        "executeOnce": true
+      },
+      {
+        "id": "69c1f728-ab29-4b66-ab33-ef8d97c9f66c",
+        "name": "Leer reglas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          480,
+          160
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "oQBEGmTUhFU6mN8i",
+            "cachedResultName": "fact_reglas"
+          },
+          "returnAll": true
+        },
+        "executeOnce": true,
+        "alwaysOutputData": true
+      },
+      {
+        "id": "faebb09b-1810-42ed-aff5-6a5048466a8f",
+        "name": "Esperar lecturas",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          720,
+          300
+        ],
+        "parameters": {
+          "mode": "chooseBranch",
+          "numberInputs": 2,
+          "chooseBranchMode": "waitForAll",
+          "output": "specifiedInput",
+          "useDataOfInput": "1"
+        }
+      },
+      {
+        "id": "ce18dad2-90dc-4dd1-b0ee-0c09d444dec5",
+        "name": "Preparar archivos",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          960,
+          300
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Separa los archivos del multipart en un item por archivo, valida tipo real\n// (firma de bytes) y tamaño, y calcula el SHA-256. No registra contenido.\nconst crypto = require('crypto');\nconst MAX_BYTES = 10 * 1024 * 1024;\nconst HEIC_BRANDS = ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'];\n\nfunction detectarTipo(buf) {\n  if (buf.length >= 5 && buf.subarray(0, 1024).indexOf('%PDF-') !== -1) return { mime: 'application/pdf', ext: 'pdf' };\n  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { mime: 'image/jpeg', ext: 'jpg' };\n  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return { mime: 'image/png', ext: 'png' };\n  if (buf.length >= 12 && buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP') return { mime: 'image/webp', ext: 'webp' };\n  if (buf.length >= 12 && buf.subarray(4, 8).toString('latin1') === 'ftyp' && HEIC_BRANDS.includes(buf.subarray(8, 12).toString('latin1'))) return { mime: 'image/heic', ext: 'heic' };\n  return null;\n}\n\nconst entrada = $input.first();\nconst binarios = entrada.binary || {};\nconst claves = Object.keys(binarios);\nconst salida = [];\n\n// Cliente de la gestoría: campo multipart o query «cliente_id» (opcional). Si falta, se\n// asigna después por el NIF del destinatario o a «Personal».\nconst cuerpo = entrada.json && entrada.json.body && typeof entrada.json.body === 'object' ? entrada.json.body : {};\nconst query = entrada.json && entrada.json.query && typeof entrada.json.query === 'object' ? entrada.json.query : {};\nconst crudoCliente = cuerpo.cliente_id ?? query.cliente_id;\nlet cliente_id = null;\nif (crudoCliente !== undefined && crudoCliente !== null && String(crudoCliente).trim() !== '') {\n  const t = String(Array.isArray(crudoCliente) ? crudoCliente[0] : crudoCliente).trim();\n  const existe = /^\\d{1,12}$/.test(t) && $('Leer clientes').all().some((i) => i.json && i.json.id === Number(t) && i.json.activo !== false);\n  if (!existe) {\n    return [{ json: { orden: 0, archivo: null, valido: false, estado: 'rechazado', error: 'El cliente_id indicado no existe o no está activo (GET /clientes).' }, pairedItem: { item: 0 } }];\n  }\n  cliente_id = Number(t);\n}\n\nif (claves.length === 0) {\n  return [{ json: { orden: 0, archivo: null, valido: false, estado: 'rechazado', error: 'No se ha recibido ningún archivo. Envía uno o varios en el campo \"archivo\" (multipart/form-data).' }, pairedItem: { item: 0 } }];\n}\n\nfor (let i = 0; i < claves.length; i++) {\n  const clave = claves[i];\n  const meta = binarios[clave];\n  const nombre = meta.fileName || clave;\n  const base = { orden: i, archivo: nombre, cliente_id };\n  let buf;\n  try {\n    buf = await this.helpers.getBinaryDataBuffer(0, clave);\n  } catch (e) {\n    salida.push({ json: { ...base, valido: false, estado: 'rechazado', error: 'No se pudo leer el archivo recibido.' }, pairedItem: { item: 0 } });\n    continue;\n  }\n  if (buf.length === 0) {\n    salida.push({ json: { ...base, tamano: 0, valido: false, estado: 'rechazado', error: 'El archivo está vacío.' }, pairedItem: { item: 0 } });\n    continue;\n  }\n  if (buf.length > MAX_BYTES) {\n    const mb = (buf.length / 1048576).toFixed(1);\n    salida.push({ json: { ...base, tamano: buf.length, valido: false, estado: 'rechazado', error: `El archivo ocupa ${mb} MB; el máximo es 10 MB.` }, pairedItem: { item: 0 } });\n    continue;\n  }\n  const tipo = detectarTipo(buf);\n  if (!tipo) {\n    salida.push({ json: { ...base, tamano: buf.length, valido: false, estado: 'rechazado', error: 'Tipo de archivo no admitido. Solo se aceptan PDF, JPG, PNG, WEBP y HEIC.' }, pairedItem: { item: 0 } });\n    continue;\n  }\n  const hash = crypto.createHash('sha256').update(buf).digest('hex');\n  salida.push({\n    json: { ...base, tamano: buf.length, mime: tipo.mime, ext: tipo.ext, hash, valido: true },\n    binary: { data: { ...meta, mimeType: tipo.mime } },\n    pairedItem: { item: 0 },\n  });\n}\nreturn salida;\n"
+        }
+      },
+      {
+        "id": "d2cdf2c7-3323-41c0-b4da-5c7427a2bbe6",
+        "name": "Construir respuesta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1440,
+          60
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "const resultados = $input.all()\n  .map((i) => i.json)\n  .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))\n  .map(({ orden, ...r }) => r);\nconst sinArchivos = resultados.length === 1 && resultados[0].archivo === null;\nreturn [{ json: { resultados, _codigo: sinArchivos ? 400 : 200 } }];\n"
+        }
+      },
+      {
+        "id": "dd78354b-2321-4ac6-a6f2-2e2ee647fdef",
+        "name": "Responder",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          1680,
+          60
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify({ resultados: $json.resultados }) }}",
+          "options": {
+            "responseCode": "={{ $json._codigo }}"
+          }
+        }
+      },
+      {
+        "id": "dd740895-bd37-445b-a39b-0786697916eb",
+        "name": "¿Archivo válido?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1440,
+          400
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "valido",
+                "leftValue": "={{ $json.valido }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "501a5d24-f9c3-4a50-94cb-6acd57734f10",
+        "name": "Buscar por hash",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1680,
+          300
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "hash_sha256",
+                "condition": "eq",
+                "keyValue": "={{ $json.hash }}"
+              },
+              {
+                "keyName": "estado",
+                "condition": "neq",
+                "keyValue": "borrada"
+              }
+            ]
+          },
+          "returnAll": false,
+          "limit": 1
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "93e2735b-a0c2-4b2c-9119-45fbb7f614de",
+        "name": "¿Ya registrada?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1920,
+          300
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "existe",
+                "leftValue": "={{ $json.id }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "number",
+                  "operation": "exists",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "8730f690-bb56-48f2-a3b1-51f71ca0a7a9",
+        "name": "Resultado duplicada",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2160,
+          160
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "const existente = $input.first().json;\nconst a = $('Recorrer archivos').first(1).json;\nreturn [{ json: { orden: a.orden, archivo: a.archivo, estado: 'duplicada', error: `Archivo idéntico ya registrado (factura id ${existente.id}).`, factura: existente } }];\n"
+        }
+      },
+      {
+        "id": "b6fc0829-2055-4148-974d-99c19ff7c86d",
+        "name": "Recorrer archivos",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          1200,
+          300
+        ],
+        "parameters": {
+          "batchSize": 1,
+          "options": {}
+        }
+      },
+      {
+        "id": "39a942b4-a753-4ca8-bba6-834e179c1b24",
+        "name": "Recuperar binario",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2160,
+          400
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Tras la consulta a la Data Table se pierde el item original: lo recuperamos\n// (json + referencia al binario) del lote actual del bucle.\nconst a = $('Recorrer archivos').first(1);\nreturn [{ json: a.json, binary: a.binary }];\n"
+        }
+      },
+      {
+        "id": "a3b4c317-edb0-4d44-b945-b5ef6f54b2df",
+        "name": "¿Es PDF?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2400,
+          400
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "pdf",
+                "leftValue": "={{ $json.mime }}",
+                "rightValue": "application/pdf",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "a9da858c-a531-421c-b816-a826b74d4573",
+        "name": "Extraer texto PDF",
+        "type": "n8n-nodes-base.extractFromFile",
+        "typeVersion": 1.1,
+        "position": [
+          2640,
+          300
+        ],
+        "parameters": {
+          "operation": "pdf",
+          "binaryPropertyName": "data",
+          "options": {
+            "joinPages": true,
+            "keepSource": "both"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "602ce684-a2fa-46b4-8887-4b97f7f70e79",
+        "name": "Preparar petición Gemini",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2880,
+          400
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Decide el modo (texto del PDF o visión sobre el binario) y construye la\n// petición a Gemini con responseSchema. El LLM solo extrae: no se le pide sumar.\n// Modelos (único sitio donde se configuran en la Ingesta; el Asesor tiene los suyos).\n// gemini-3.5-flash daba 429 siempre con esta clave (auditoría B8): principal = lite.\nconst MODELO = 'gemini-3.5-flash-lite';\nconst MODELO_RESPALDO = 'gemini-3.5-flash';\n\nconst archivo = $('Recorrer archivos').first(1).json;\nconst entrada = $input.first();\n\nlet texto = '';\nif (archivo.mime === 'application/pdf' && entrada.json && typeof entrada.json.text === 'string') {\n  texto = entrada.json.text.replace(/[ \\t]+/g, ' ').replace(/\\n{3,}/g, '\\n\\n').trim();\n}\nconst caracteresUtiles = (texto.match(/[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]/g) || []).length;\nconst modo = caracteresUtiles >= 60 ? 'texto' : 'vision';\n\nconst categorias = $('Leer categorías').all()\n  .map((i) => i.json)\n  .filter((c) => c && c.nombre && c.activa !== false)\n  .sort((a, b) => (a.orden ?? 999) - (b.orden ?? 999))\n  .map((c) => c.nombre);\nif (!categorias.includes('Otros')) categorias.push('Otros');\n\nconst hoy = $now.setZone('Europe/Madrid').toISODate();\n\nconst instrucciones = [\n  'Eres un extractor de datos de facturas y tickets (mayoritariamente españoles) RECIBIDAS por una empresa, autónomo o particular. Devuelve únicamente lo que aparece en el documento.',\n  'Reglas:',\n  '- Importes: cópialos EXACTAMENTE como aparecen impresos, como número decimal con punto (12,50 € -> 12.5). NO calcules, NO sumes, NO redondees y NO corrijas importes aunque parezcan incoherentes entre sí. Si un importe no aparece impreso, devuelve null. En facturas rectificativas o de abono, conserva el signo negativo impreso.',\n  '- desglose_iva: una línea POR CADA TIPO de IVA impreso (21, 10, 4, 5...), con su base imponible, tipo_iva, cuota_iva y, si hay recargo de equivalencia, tipo_re (5.2, 1.4, 0.5...) y cuota_re. Si no hay recargo, tipo_re y cuota_re = null.',\n  '- Ticket con «IVA incluido» sin base ni cuota impresas: pon una línea con tipo_iva = el tipo indicado, base = null, cuota_iva = null e importe_con_iva = importe con IVA de ese tipo si consta. NO calcules la base ni la cuota. Si no consta ningún tipo de IVA, desglose_iva = [].',\n  '- base_exenta = suma de bases SIN IVA impresas: exentas, no sujetas, con inversión del sujeto pasivo, intracomunitarias o de fuera de la UE sin IVA. Si no hay, null. No incluyas esas bases en desglose_iva.',\n  '- irpf_tipo = porcentaje de retención de IRPF impreso (15, 7, 19...) e irpf_cuota = importe retenido impreso en POSITIVO (en abonos, con el signo impreso). Si no hay retención, null.',\n  '- suplidos = gastos pagados por cuenta del cliente (tasas, registros, provisiones de fondos) que se suman sin IVA. Si no hay, null.',\n  '- total = TOTAL DE LA FACTURA ANTES DE RESTAR LA RETENCIÓN (bases + IVA + recargo + suplidos). total_a_pagar = importe líquido a pagar DESPUÉS de restar la retención («Total a pagar», «Líquido»). Son dos campos distintos: si hay retención, total es MAYOR que total_a_pagar; si no hay retención, ambos coinciden.',\n  '- tipo_factura: \"rectificativa\" si es rectificativa o abono (e indica rectifica_numero = nº de la factura rectificada, si consta); \"simplificada\" para tickets y facturas simplificadas; \"simplificada_cualificada\" si es simplificada y además consta el NIF y el domicilio del destinatario; si no, \"completa\".',\n  '- Fechas en formato AAAA-MM-DD. fecha_emision = fecha de expedición de la factura o ticket. fecha_operacion = fecha de realización de la operación SOLO si se indica expresamente y es distinta; si no, null. fecha_vencimiento solo si aparece expresamente (vencimiento, fecha de cargo o límite de pago); si no, null.',\n  '- proveedor = razón social del EMISOR (no del cliente). nif = NIF/CIF/VAT del emisor tal cual (sin espacios). destinatario_nombre y destinatario_nif = nombre y NIF del CLIENTE o destinatario si constan; si no, null.',\n  '- mencion_operacion: \"inversion_sujeto_pasivo\" si menciona inversión del sujeto pasivo (art. 84 LIVA); \"reverse_charge\" si menciona reverse charge / autoliquidación por el destinatario; \"intracomunitaria\" si menciona operación intracomunitaria exenta (art. 25 LIVA o similar); \"exenta\" o \"no_sujeta\" si menciona exención o no sujeción; si no hay ninguna mención, \"ninguna\". tipo_iva_autorrepercusion solo si el documento indica qué tipo debe autorrepercutirse; si no, null.',\n  '- numero = número de factura/ticket tal como aparece (con su serie). Si no aparece, null.',\n  '- moneda = código ISO 4217 (EUR si el símbolo es €, USD si es $ o US$). metodo_pago = tarjeta, efectivo, domiciliación, transferencia, PayPal, Bizum... o null si no consta. pagada = true solo si el documento indica que ya está pagada o cobrada (ticket pagado, «pagado», cargo realizado); si no consta, null.',\n  '- lineas = una línea por artículo o concepto comprado, con descripcion tal cual impresa, cantidad (si consta; si no, 1) e importe de esa línea impreso (máximo 40 líneas; si hay más, las 40 de mayor importe). No incluyas líneas de subtotal, total, IVA, entrega, cambio, descuento global ni forma de pago.',\n  '- TICKETS DE COMPRA: tipo_factura = \"simplificada\"; numero = número de ticket, operación o factura simplificada SOLO si consta impreso (si no, null; nunca lo inventes); nif = NIF del establecimiento SOLO si consta (si no, null). Si el ticket tiene tabla de IVA (Base / % IVA / Cuota), una línea de desglose_iva por cada tipo (21, 10, 4) con base y cuota impresas; si solo dice «IVA incluido» con un tipo, aplica la regla de IVA incluido.',\n  '- hora = hora de emisión del ticket en formato HH:MM (24 h) si consta; si no, null.',\n  '- propina_redondeo = propina, donativo, redondeo u otro importe que figure sumado en el total pero NO esté dentro de ninguna base de IVA; si no hay, null. No lo incluyas en desglose_iva.',\n  '- legibilidad: \"buena\" si lees el documento con seguridad; \"dudosa\" si hay zonas borrosas, cortadas o torcidas pero el total y los importes principales se leen; \"mala\" si el total o los importes principales NO se pueden leer con seguridad. Si el total no se lee con seguridad, total = null: no lo adivines.',\n  '- Categoría de tickets según el establecimiento y lo comprado: supermercado o tienda de alimentación -> «Alimentación y supermercado»; farmacia o parafarmacia -> «Salud y farmacia»; gasolinera -> «Transporte y combustible»; bar, cafetería o restaurante -> «Restaurantes y comida a domicilio»; ropa o calzado -> «Ropa y calzado»; ferretería, muebles o decoración -> «Hogar»; electrónica -> «Tecnología y electrónica»; suministros del hogar o del local: compañía eléctrica -> «Luz»; agua, Canal de Isabel II, Aigües, EMASESA -> «Agua»; gas natural, butano, Naturgy gas -> «Gas»; telefonía, móvil o fibra (Movistar, Vodafone, Orange, MásMóvil, Digi, Telefónica) -> «Telefonía e internet»; si una factura mezcla luz y gas elige la de mayor importe. Elige siempre una de la lista permitida.',\n  '- categoria = exactamente una de la lista permitida. subcategoria = texto corto (p. ej. \"Electricidad\", \"Honorarios de abogado\", \"Material de obra\").',\n  '- tipo_suministro: SOLO para facturas de suministros del hogar. Decide por el CONTENIDO de la factura, no por la marca: Endesa, Iberdrola, Naturgy, Repsol, Energía XXI y otras comercializadoras venden luz Y gas. \"luz\" si facturan electricidad (potencia contratada, kWh de energía eléctrica, peajes, impuesto de electricidad); \"gas\" si facturan gas natural o GLP (cabecera «Factura de gas», término fijo/variable de gas, m³, poder calorífico, alquiler de equipos de gas); \"agua\" si es abastecimiento (consumo en m³ de agua, alcantarillado, depuración, saneamiento, tasa de basuras); \"telefonia\" si es línea móvil, fibra o internet; \"otro\" para otro suministro; \"ninguno\" si no es un suministro. La categoría debe ser coherente con este tipo.',\n  '- tipo_gasto: \"suscripcion\" = servicio de pago recurrente que el usuario puede cancelar libremente (streaming, música, apps, software, gimnasio, cuotas de socio); \"contrato\" = servicio recurrente sujeto a contrato de suministro, alquiler o póliza (luz, agua, gas, internet, telefonía, seguros, alquiler); \"puntual\" = compra o pago único.',\n  '- periodicidad: solo para suscripcion o contrato (semanal, mensual, bimestral, trimestral, semestral, anual), deducida del periodo facturado o de la propia factura; para puntual, null.',\n  '- confianza: número entre 0 y 1 con tu seguridad global en la lectura (bájala si la imagen es borrosa, faltan datos clave o dudas de algún importe).',\n  '- motivo: una frase breve que justifique la categoría y el tipo de gasto. No repitas importes ni datos personales.',\n  `Fecha de hoy (solo para interpretar fechas ambiguas): ${hoy}.`,\n].join('\\n');\n\nconst nullable = (type, extra = {}) => ({ type, nullable: true, ...extra });\nconst CAMPOS = ['proveedor', 'nif', 'numero', 'tipo_factura', 'rectifica_numero', 'fecha_emision', 'fecha_operacion', 'fecha_vencimiento', 'destinatario_nombre', 'destinatario_nif', 'lineas', 'desglose_iva', 'base_exenta', 'irpf_tipo', 'irpf_cuota', 'suplidos', 'total', 'total_a_pagar', 'mencion_operacion', 'tipo_iva_autorrepercusion', 'moneda', 'metodo_pago', 'pagada', 'hora', 'propina_redondeo', 'legibilidad', 'tipo_suministro', 'categoria', 'subcategoria', 'tipo_gasto', 'periodicidad', 'confianza', 'motivo'];\nconst responseSchema = {\n  type: 'OBJECT',\n  properties: {\n    proveedor: nullable('STRING'),\n    nif: nullable('STRING'),\n    numero: nullable('STRING'),\n    tipo_factura: { type: 'STRING', enum: ['completa', 'simplificada', 'simplificada_cualificada', 'rectificativa'] },\n    rectifica_numero: nullable('STRING'),\n    fecha_emision: nullable('STRING', { description: 'AAAA-MM-DD' }),\n    fecha_operacion: nullable('STRING', { description: 'AAAA-MM-DD, solo si es distinta de la de emisión' }),\n    fecha_vencimiento: nullable('STRING', { description: 'AAAA-MM-DD' }),\n    destinatario_nombre: nullable('STRING'),\n    destinatario_nif: nullable('STRING'),\n    lineas: {\n      type: 'ARRAY',\n      items: {\n        type: 'OBJECT',\n        properties: {\n          descripcion: { type: 'STRING' },\n          cantidad: nullable('NUMBER'),\n          precio_unitario: nullable('NUMBER'),\n          importe: nullable('NUMBER'),\n        },\n        required: ['descripcion'],\n      },\n    },\n    desglose_iva: {\n      type: 'ARRAY',\n      items: {\n        type: 'OBJECT',\n        properties: {\n          base: nullable('NUMBER'),\n          tipo_iva: { type: 'NUMBER' },\n          cuota_iva: nullable('NUMBER'),\n          tipo_re: nullable('NUMBER'),\n          cuota_re: nullable('NUMBER'),\n          importe_con_iva: nullable('NUMBER', { description: 'solo tickets con IVA incluido sin base ni cuota' }),\n        },\n        required: ['base', 'tipo_iva', 'cuota_iva', 'tipo_re', 'cuota_re', 'importe_con_iva'],\n        propertyOrdering: ['base', 'tipo_iva', 'cuota_iva', 'tipo_re', 'cuota_re', 'importe_con_iva'],\n      },\n    },\n    base_exenta: nullable('NUMBER'),\n    irpf_tipo: nullable('NUMBER'),\n    irpf_cuota: nullable('NUMBER'),\n    suplidos: nullable('NUMBER'),\n    total: nullable('NUMBER', { description: 'total de la factura ANTES de restar la retención' }),\n    total_a_pagar: nullable('NUMBER', { description: 'líquido a pagar DESPUÉS de restar la retención' }),\n    mencion_operacion: { type: 'STRING', enum: ['ninguna', 'inversion_sujeto_pasivo', 'reverse_charge', 'intracomunitaria', 'exenta', 'no_sujeta'] },\n    tipo_iva_autorrepercusion: nullable('NUMBER'),\n    moneda: nullable('STRING'),\n    metodo_pago: nullable('STRING'),\n    pagada: nullable('BOOLEAN'),\n    hora: nullable('STRING', { description: 'HH:MM del ticket' }),\n    propina_redondeo: nullable('NUMBER'),\n    legibilidad: { type: 'STRING', enum: ['buena', 'dudosa', 'mala'] },\n    tipo_suministro: { type: 'STRING', enum: ['luz', 'gas', 'agua', 'telefonia', 'otro', 'ninguno'] },\n    categoria: { type: 'STRING', enum: categorias },\n    subcategoria: nullable('STRING'),\n    tipo_gasto: { type: 'STRING', enum: ['puntual', 'suscripcion', 'contrato'] },\n    periodicidad: nullable('STRING', { enum: ['semanal', 'mensual', 'bimestral', 'trimestral', 'semestral', 'anual'] }),\n    confianza: { type: 'NUMBER' },\n    motivo: { type: 'STRING' },\n  },\n  required: CAMPOS,\n  propertyOrdering: CAMPOS,\n};\n\nconst parts = [{ text: instrucciones }];\nif (modo === 'texto') {\n  parts.push({ text: 'TEXTO DE LA FACTURA (extraído del PDF):\\n\"\"\"\\n' + texto.slice(0, 30000) + '\\n\"\"\"' });\n} else {\n  if (!entrada.binary || !entrada.binary.data) {\n    return [{ json: { modo: 'error', modelo: MODELO, modelo_respaldo: MODELO_RESPALDO, error: 'No se pudo leer el PDF (dañado o protegido).' } }];\n  }\n  const buf = await this.helpers.getBinaryDataBuffer(0, 'data');\n  parts.push({ text: 'Documento adjunto (imagen o PDF escaneado). Lee la factura completa.' });\n  parts.push({ inline_data: { mime_type: archivo.mime, data: buf.toString('base64') } });\n}\n\nconst peticion = {\n  contents: [{ role: 'user', parts }],\n  // Sin temperature: en Gemini 3 Google recomienda el valor por defecto.\n  generationConfig: {\n    responseMimeType: 'application/json',\n    responseSchema,\n    thinkingConfig: { thinkingLevel: 'low' },\n  },\n};\n\n// texto_factura: lo usa el detector de tipo de suministro de «Interpretar y validar» (no se guarda ni se registra)\nreturn [{ json: { modo, categorias, modelo: MODELO, modelo_respaldo: MODELO_RESPALDO, peticion, texto_factura: modo === 'texto' ? texto.slice(0, 30000) : '' } }];\n"
+        }
+      },
+      {
+        "id": "c208e1f5-9dae-4ccf-938c-ed45d883086c",
+        "name": "Resultado sin procesar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1680,
+          700
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Archivos rechazados (tipo/tamaño) o con error de extracción: no se guardan.\nconst j = $input.first().json;\nreturn [{ json: { orden: j.orden, archivo: j.archivo, estado: j.estado || 'rechazado', error: j.error || 'Error desconocido.' } }];\n"
+        }
+      },
+      {
+        "id": "05e57ab0-e28b-4f9d-9a7b-d3c57814ee48",
+        "name": "Gemini extraer",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          3120,
+          400
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $json.modelo + ':generateContent' }}",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googlePalmApi",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.peticion) }}",
+          "options": {
+            "timeout": 180000
+          }
+        },
+        "credentials": {
+          "googlePalmApi": {
+            "id": "pGeL1IfQ1fQkcUwW",
+            "name": "Google Gemini(PaLM) Api account"
+          }
+        },
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 3000,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "9f75f380-2e81-47ae-95f3-1696921b31d8",
+        "name": "Interpretar y validar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3480,
+          400
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Normaliza la extracción de Gemini, asigna el cliente, aplica reglas (cliente >\n// global), completa los campos fiscales y valida con cálculos propios (céntimos).\n// Si la moneda no es EUR, la entrada es la respuesta del BCE (CSV). Nunca\n// incluye contenido de la factura en los mensajes de error.\nconst archivo = $('Recorrer archivos').first(1).json;\nconst prep = $('Preparar petición Gemini').first().json;\nconst g = $('Leer respuesta Gemini').first().json;\nif (g._error) return [{ json: { _error: true, orden: archivo.orden, archivo: archivo.archivo, estado: 'error', error: g.error } }];\nconst d = g.d;\n\n// === COMÚN Ingesta/API: inicio ===\n// Bloque idéntico en FACT — Ingesta («Interpretar y validar») y FACT — API\n// («PATCH: revalidar y fusionar»). Si cambias algo aquí, cámbialo en ambos.\n// Todas las cifras en céntimos enteros. Diseño: docs/diseno-gestoria.md §2.\nconst num = (x) => {\n  if (x === null || x === undefined || x === '') return null;\n  let v = x;\n  if (typeof v === 'string') {\n    v = v.replace(/[^0-9,.\\-]/g, '');\n    if (v.includes(',') && v.includes('.')) v = v.lastIndexOf(',') > v.lastIndexOf('.') ? v.replace(/\\./g, '').replace(',', '.') : v.replace(/,/g, '');\n    else v = v.replace(',', '.');\n    v = Number(v);\n  }\n  return typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100) / 100 : null;\n};\nconst cent = (x) => Math.round(x * 100);\nconst fechaValida = (s) => {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return false;\n  const [y, m, dd] = s.split('-').map(Number);\n  const dt = new Date(Date.UTC(y, m - 1, dd));\n  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === dd && y >= 1990;\n};\nconst txtOrNull = (s) => (typeof s === 'string' && s.trim() ? s.trim() : null);\n// Método de pago: primera letra en mayúscula y el resto como venga («tarjeta» → «Tarjeta», «PayPal» igual).\nconst normalizarMetodoPago = (s) => { const t = txtOrNull(s); return t ? t.charAt(0).toLocaleUpperCase('es-ES') + t.slice(1) : null; };\nconst SUFIJOS = new Set(['sa', 'sau', 'sl', 'slu', 'sll', 'slne', 'scoop', 'sc', 'cb', 'bv', 'nv', 'ab', 'ltd', 'limited', 'inc', 'llc', 'gmbh', 'ag', 'plc', 'corp', 'corporation', 'spa', 'srl', 'sas', 'sarl', 'oy', 'aps', 'as', 'unipersonal', 'co']);\nconst normalizarProveedor = (s) => {\n  if (!s) return null;\n  let t = s.normalize('NFD').replace(/\\p{M}/gu, '').toLowerCase().replace(/\\./g, '').replace(/[^a-z0-9]+/g, ' ').trim();\n  const w = t.split(' ').filter(Boolean);\n  while (w.length > 1 && SUFIJOS.has(w[w.length - 1])) w.pop();\n  return w.join(' ') || null;\n};\nconst r2 = (c) => Math.round(c) / 100; // céntimos -> euros\n\n// --- NIF: normalizado (mayúsculas, sin espacios/guiones/puntos, sin «ES» delante de un NIF español) ---\nconst PAISES_UE = new Set(['AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'EL', 'GR', 'FI', 'FR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK', 'XI']);\nconst LETRAS_DNI = 'TRWAGMYFPDXBNJZSQVHLCKE';\nconst normalizarNif = (s) => {\n  if (s === null || s === undefined) return null;\n  let v = String(s).toUpperCase().replace(/[\\s.\\-\\/]/g, '');\n  if (/^ES[0-9A-Z]\\d{7}[0-9A-Z]$/.test(v)) v = v.slice(2);\n  return v || null;\n};\n// 'ES' (forma de NIF español), 'UE' (prefijo de país UE distinto de ES), 'EXT' (resto: EIN, EU-OSS, otros países) o null.\nconst origenNif = (s) => {\n  const v = normalizarNif(s);\n  if (!v) return null;\n  if (/^(\\d|[A-Z]\\d)/.test(v)) return 'ES';\n  if (PAISES_UE.has(v.slice(0, 2))) return 'UE';\n  return 'EXT';\n};\n// true/false según el dígito de control (DNI, NIE, CIF y NIF K/L/M); null si no hay NIF o es extranjero.\nconst validarNif = (s) => {\n  const v = normalizarNif(s);\n  if (!v) return null;\n  if (origenNif(v) !== 'ES') return null;\n  if (/^\\d{8}[A-Z]$/.test(v)) return LETRAS_DNI[Number(v.slice(0, 8)) % 23] === v[8];\n  if (/^[XYZ]\\d{7}[A-Z]$/.test(v)) return LETRAS_DNI[Number('XYZ'.indexOf(v[0]) + v.slice(1, 8)) % 23] === v[8];\n  if (/^[ABCDEFGHJKLMNPQRSUVW]\\d{7}[0-9A-J]$/.test(v)) {\n    let suma = 0;\n    v.slice(1, 8).split('').map(Number).forEach((x, i) => {\n      if (i % 2 === 0) { const y = x * 2; suma += Math.floor(y / 10) + (y % 10); } else suma += x;\n    });\n    const ctrl = (10 - (suma % 10)) % 10;\n    const letra = 'JABCDEFGHI'[ctrl];\n    if ('KLMNPQRSW'.includes(v[0])) return v[8] === letra;\n    if ('ABEH'.includes(v[0])) return v[8] === String(ctrl);\n    return v[8] === String(ctrl) || v[8] === letra;\n  }\n  return false;\n};\n\n// --- Desglose de IVA: [{base, tipo_iva, cuota_iva, tipo_re, cuota_re}], una línea por tipo ---\n// Las líneas al 0 % sin cuota pasan a base_exenta.\nconst normalizarDesglose = (arr, baseExenta) => {\n  let exentaC = cent(num(baseExenta) || 0);\n  const lineas = [];\n  for (const l of Array.isArray(arr) ? arr : []) {\n    if (!l || typeof l !== 'object') continue;\n    const x = { base: num(l.base), tipo_iva: num(l.tipo_iva), cuota_iva: num(l.cuota_iva), tipo_re: num(l.tipo_re) || 0, cuota_re: num(l.cuota_re) || 0 };\n    if (x.base === null && x.cuota_iva === null) continue;\n    if ((x.tipo_iva === 0 || x.tipo_iva === null) && !x.cuota_iva && !x.cuota_re && x.base !== null) { exentaC += cent(x.base); continue; }\n    lineas.push(x);\n  }\n  return { desglose: lineas, base_exenta: r2(exentaC) };\n};\n// Campos de compatibilidad: base = Σ bases + exenta; iva_tipo = tipo de la base mayor; iva_cuota = Σ cuotas (sin recargo).\nconst derivarCompat = (desglose, baseExenta) => {\n  const exC = cent(baseExenta || 0);\n  if (!desglose.length && !exC) return { base: null, iva_tipo: null, iva_cuota: null, cuota_re: 0 };\n  if (desglose.some((l) => l.base === null || l.cuota_iva === null)) {\n    return { base: desglose.some((l) => l.base === null) ? null : r2(desglose.reduce((s, l) => s + cent(l.base), exC)), iva_tipo: desglose.length ? desglose[0].tipo_iva : 0, iva_cuota: null, cuota_re: r2(desglose.reduce((s, l) => s + cent(l.cuota_re || 0), 0)) };\n  }\n  let mayor = null;\n  for (const l of desglose) if (!mayor || Math.abs(l.base) > Math.abs(mayor.base)) mayor = l;\n  return {\n    base: r2(desglose.reduce((s, l) => s + cent(l.base), exC)),\n    iva_tipo: mayor ? mayor.tipo_iva : 0,\n    iva_cuota: r2(desglose.reduce((s, l) => s + cent(l.cuota_iva), 0)),\n    cuota_re: r2(desglose.reduce((s, l) => s + cent(l.cuota_re || 0), 0)),\n  };\n};\n\n// --- Operación y autorrepercusión ---\nconst OPERACIONES = ['interior', 'intracomunitaria', 'isp_nacional', 'extracomunitaria', 'importacion', 'exenta'];\nconst AUTORREPERCUTEN = ['intracomunitaria', 'isp_nacional', 'extracomunitaria'];\n// mencion: 'inversion_sujeto_pasivo' | 'reverse_charge' | 'intracomunitaria' | 'exenta' | 'no_sujeta' | 'ninguna' | null\nconst determinarOperacion = ({ nif, desglose, base_exenta, mencion }) => {\n  const sinIva = !desglose.some((l) => cent(l.cuota_iva || 0) !== 0);\n  const origen = origenNif(nif);\n  if (sinIva && (mencion === 'inversion_sujeto_pasivo' || (mencion === 'reverse_charge' && origen === 'ES'))) return 'isp_nacional';\n  if (sinIva && origen === 'UE') return 'intracomunitaria';\n  if (sinIva && origen === 'EXT') return 'extracomunitaria';\n  if (sinIva && cent(base_exenta || 0) !== 0) return 'exenta';\n  return 'interior';\n};\nconst calcularAutorrepercutida = (operacion, baseExenta, tipo) => (AUTORREPERCUTEN.includes(operacion)\n  ? r2(Math.round((cent(baseExenta || 0) * (typeof tipo === 'number' && tipo > 0 ? tipo : 21)) / 100))\n  : 0);\n\n// --- Deducibilidad (orden del diseño §2). cliente = fila de fact_clientes ---\nconst DEDUCIBLES = ['si', 'no', 'parcial', 'dudoso', 'na'];\nconst CATEGORIAS_DUDOSAS = ['Restaurantes y comida a domicilio', 'Viajes'];\nconst calcularDeducible = (f, cliente, forzado) => {\n  const regimen = (cliente && cliente.regimen_iva) || 'particular';\n  const prorrata = cliente && typeof cliente.prorrata_pct === 'number' && cliente.prorrata_pct >= 0 && cliente.prorrata_pct <= 100 ? cliente.prorrata_pct : 100;\n  const ivaC = f.desglose.reduce((s, l) => s + cent(l.cuota_iva || 0), 0) + cent(f.cuota_autorrepercutida || 0);\n  const cuotaCon = (pct) => r2(Math.round((ivaC * pct) / 100));\n  const res = (deducible, motivo) => ({\n    deducible,\n    motivo_deducible: motivo,\n    cuota_deducible: deducible === 'si' || deducible === 'parcial' ? cuotaCon(prorrata) : 0,\n  });\n  if (forzado && DEDUCIBLES.includes(forzado.deducible)) return res(forzado.deducible, forzado.motivo || 'Manual: marcado a mano.');\n  if (regimen === 'particular') return res('na', 'El cliente es un particular: no deduce IVA.');\n  if (regimen === 'recargo_equivalencia') return res('no', 'Cliente en recargo de equivalencia: no deduce el IVA soportado.');\n  if (f.tipo_factura === 'simplificada' && !f.destinatario_nif) return res('no', 'Factura simplificada sin NIF del destinatario.');\n  if (f.nif_valido === false) return res('no', 'NIF del proveedor no válido (subsanable: pide una factura corregida).');\n  if (!f.numero) return res('no', 'Falta el número de factura (subsanable).');\n  if (CATEGORIAS_DUDOSAS.includes(f.categoria)) return res('dudoso', 'Restauración o viajes: deducible solo si está afecto a la actividad.');\n  if (ivaC === 0) return res('na', 'Sin IVA soportado ni autorrepercutido.');\n  if (prorrata < 100) return res('parcial', `Deducible al ${prorrata} % (prorrata del cliente).`);\n  return res('si', AUTORREPERCUTEN.includes(f.operacion) ? 'Deducible: IVA autorrepercutido.' : 'Factura completa con los datos obligatorios.');\n};\n\n// --- Reglas y cuentas: regla del cliente > regla global > categoría.cuenta_pgc > 629 ---\nconst buscarRegla = (reglas, proveedorNorm, clienteId, campo) => {\n  if (!proveedorNorm) return null;\n  const tiene = (r) => r && r.proveedor_norm === proveedorNorm && txtOrNull(r[campo]);\n  return (reglas || []).find((r) => tiene(r) && r.cliente_id === clienteId)\n    || (reglas || []).find((r) => tiene(r) && (r.cliente_id === null || r.cliente_id === undefined))\n    || null;\n};\nconst resolverCuenta = (proveedorNorm, categoria, clienteId, reglas, categorias) => {\n  const regla = buscarRegla(reglas, proveedorNorm, clienteId, 'cuenta_gasto');\n  const cat = (categorias || []).find((c) => c && c.nombre === categoria);\n  const cuenta = (regla && txtOrNull(regla.cuenta_gasto)) || (cat && txtOrNull(cat.cuenta_pgc)) || '629';\n  return { cuenta_gasto: cuenta, cuenta_proveedor: cuentaProveedor(cuenta) };\n};\nconst cuentaProveedor = (cuenta) => (String(cuenta || '').startsWith('60') ? '400' : '410');\n\n// --- Moneda: tipo_cambio = EUR por 1 unidad (BCE); total_eur = total × tipo_cambio ---\nconst aplicarCambio = (f, tipoCambio) => {\n  if (!f.moneda || f.moneda === 'EUR') return { tipo_cambio: 1, total_eur: f.total };\n  if (typeof tipoCambio !== 'number' || !(tipoCambio > 0) || f.total === null) return { tipo_cambio: null, total_eur: null };\n  return { tipo_cambio: tipoCambio, total_eur: r2(Math.round(cent(f.total) * tipoCambio)) };\n};\n// CSV del BCE (format=csvdata): último OBS_VALUE con TIME_PERIOD <= fecha. Devuelve EUR por unidad (1/valor) o null.\nconst tipoCambioBce = (csv, fecha) => {\n  if (typeof csv !== 'string' || !csv.trim()) return null;\n  const lineas = csv.trim().split(/\\r?\\n/);\n  const cab = lineas[0].split(',');\n  const iT = cab.indexOf('TIME_PERIOD');\n  const iV = cab.indexOf('OBS_VALUE');\n  if (iT < 0 || iV < 0) return null;\n  let mejor = null;\n  for (const l of lineas.slice(1)) {\n    const c = l.split(',');\n    const v = Number(c[iV]);\n    if (/^\\d{4}-\\d{2}-\\d{2}$/.test(c[iT]) && c[iT] <= fecha && v > 0 && (!mejor || c[iT] > mejor.t)) mejor = { t: c[iT], v };\n  }\n  return mejor ? Math.round((1 / mejor.v) * 1e6) / 1e6 : null;\n};\n\n// --- Nº de recepción: siguiente correlativo del cliente en el año ---\nconst siguienteRecepcion = (filas, clienteId, anio) => {\n  const pre = `${anio}-`;\n  let max = 0;\n  for (const f of filas || []) {\n    if (f && f.cliente_id === clienteId && typeof f.num_recepcion === 'string' && f.num_recepcion.startsWith(pre)) {\n      const n = Number(f.num_recepcion.slice(pre.length));\n      if (Number.isFinite(n) && n > max) max = n;\n    }\n  }\n  return pre + String(max + 1).padStart(6, '0');\n};\n\n// --- Completa los campos fiscales derivados de una factura (Ingesta, PATCH y migración) ---\n// f: nif, destinatario_nif, numero, categoria, tipo_factura, desglose (array), base_exenta, suplidos,\n//    irpf_tipo, irpf_cuota, total, moneda, tipo_cambio, operacion (indicada o null), mencion, tipo_autorrepercusion.\nconst TIPOS_FACTURA = ['completa', 'simplificada', 'simplificada_cualificada', 'rectificativa'];\nconst completarFiscal = (f, cliente, forzado) => {\n  const nd = normalizarDesglose(f.desglose, f.base_exenta);\n  const total = num(f.total);\n  const compat = derivarCompat(nd.desglose, nd.base_exenta);\n  const tipo_factura = TIPOS_FACTURA.includes(f.tipo_factura) ? f.tipo_factura : 'completa';\n  let irpf_cuota = num(f.irpf_cuota);\n  const irpf_tipo = num(f.irpf_tipo) || 0;\n  if (irpf_cuota === null && irpf_tipo > 0) {\n    const baseIrpfC = nd.desglose.reduce((s, l) => s + cent(l.base || 0), 0);\n    irpf_cuota = r2(Math.round((baseIrpfC * irpf_tipo) / 100));\n  }\n  irpf_cuota = Math.abs(irpf_cuota || 0);\n  if (total !== null && total < 0) irpf_cuota = -irpf_cuota; // rectificativas: retención negativa\n  const nif = normalizarNif(f.nif);\n  const destinatario_nif = normalizarNif(f.destinatario_nif);\n  const operacion = OPERACIONES.includes(f.operacion) ? f.operacion\n    : determinarOperacion({ nif, desglose: nd.desglose, base_exenta: nd.base_exenta, mencion: f.mencion });\n  const cuota_autorrepercutida = calcularAutorrepercutida(operacion, nd.base_exenta, num(f.tipo_autorrepercusion));\n  const nif_valido = validarNif(nif);\n  const moneda = typeof f.moneda === 'string' && /^[A-Z]{3}$/.test(f.moneda) ? f.moneda : 'EUR';\n  const cambio = aplicarCambio({ moneda, total }, num(f.tipo_cambio) === null ? null : Number(f.tipo_cambio));\n  const base = {\n    nif,\n    destinatario_nif,\n    tipo_factura,\n    operacion,\n    desglose: nd.desglose,\n    desglose_iva_json: JSON.stringify(nd.desglose),\n    base_exenta: nd.base_exenta,\n    base: compat.base,\n    iva_tipo: compat.iva_tipo,\n    iva_cuota: compat.iva_cuota,\n    cuota_re: compat.cuota_re,\n    irpf_tipo,\n    irpf_cuota,\n    suplidos: num(f.suplidos) || 0,\n    total,\n    total_a_pagar: total === null ? null : r2(cent(total) - cent(irpf_cuota)),\n    cuota_autorrepercutida,\n    nif_valido,\n    moneda,\n    tipo_cambio: cambio.tipo_cambio,\n    total_eur: cambio.total_eur,\n  };\n  const ded = calcularDeducible({ ...base, numero: txtOrNull(f.numero), categoria: f.categoria }, cliente, forzado);\n  return { ...base, ...ded };\n};\n\n// --- Validación (céntimos). hoy = AAAA-MM-DD en Europe/Madrid. total_a_pagar_leido: el impreso (Ingesta) ---\nconst validarFactura = (f, hoy) => {\n  const errores = [];\n  const fmt = (x) => x.toFixed(2);\n  if (!f.proveedor) errores.push('No se ha identificado el proveedor.');\n  if (f.total === null) errores.push('No se ha encontrado el total.');\n  else if (cent(f.total) === 0) errores.push('El total no puede ser 0.');\n  else if (f.total < 0 && f.tipo_factura !== 'rectificativa') errores.push(`El total (${fmt(f.total)}) es negativo y la factura no es rectificativa.`);\n  const desglose = f.desglose || [];\n  const exC = cent(f.base_exenta || 0);\n  if (!desglose.length && !exC) {\n    errores.push('No se puede comprobar base + IVA = total: falta base imponible y cuota de IVA.');\n  } else if (desglose.some((l) => l.base === null || l.cuota_iva === null)) {\n    const faltan = [desglose.some((l) => l.base === null) ? 'base imponible' : null, desglose.some((l) => l.cuota_iva === null) ? 'cuota de IVA' : null].filter(Boolean).join(' y ');\n    errores.push(`No se puede comprobar base + IVA = total: falta ${faltan}.`);\n  } else if (f.total !== null) {\n    const baseC = desglose.reduce((s, l) => s + cent(l.base), 0) + exC;\n    const ivaC = desglose.reduce((s, l) => s + cent(l.cuota_iva), 0);\n    const reC = desglose.reduce((s, l) => s + cent(l.cuota_re || 0), 0);\n    const supC = cent(f.suplidos || 0);\n    const sumaC = baseC + ivaC + reC + supC;\n    const dif = sumaC - cent(f.total);\n    if (Math.abs(dif) > 2) {\n      if (!reC && !supC) errores.push(`Base (${fmt(baseC / 100)}) + IVA (${fmt(ivaC / 100)}) = ${fmt(sumaC / 100)}, no cuadra con el total (${fmt(f.total)}): diferencia de ${fmt(dif / 100)} €.`);\n      else errores.push(`Base (${fmt(baseC / 100)}) + IVA (${fmt(ivaC / 100)}) + recargo (${fmt(reC / 100)}) + suplidos (${fmt(supC / 100)}) = ${fmt(sumaC / 100)}, no cuadra con el total (${fmt(f.total)}): diferencia de ${fmt(dif / 100)} €.`);\n    }\n  }\n  if (f.total !== null && f.total_a_pagar_leido !== null && f.total_a_pagar_leido !== undefined) {\n    const esperado = cent(f.total) - cent(f.irpf_cuota || 0);\n    const dif = esperado - cent(f.total_a_pagar_leido);\n    if (Math.abs(dif) > 2) errores.push(`Total (${fmt(f.total)}) − retención (${fmt(f.irpf_cuota || 0)}) = ${fmt(esperado / 100)}, no cuadra con el total a pagar (${fmt(f.total_a_pagar_leido)}).`);\n  }\n  if (!f.fecha_emision) errores.push('Fecha de emisión ausente o no válida.');\n  else if (f.fecha_emision > hoy) errores.push(`La fecha de emisión (${f.fecha_emision}) es futura.`);\n  if (f.moneda && f.moneda !== 'EUR' && (f.total_eur === null || f.total_eur === undefined)) errores.push(`Sin tipo de cambio para ${f.moneda}: no se suma en los totales en euros.`);\n  return errores;\n};\n// === COMÚN Ingesta/API: fin ===\n\n// --- contexto ---\nconst hoy = $now.setZone('Europe/Madrid').toISODate();\nconst ahora = $now.setZone('Europe/Madrid').toISO();\nconst categorias = prep.categorias || [];\nconst filasCategorias = $('Leer categorías').all().map((i) => i.json).filter((c) => c && c.nombre);\nconst reglas = $('Leer reglas').all().map((i) => i.json).filter((x) => x && x.proveedor_norm);\nconst clientes = $('Leer clientes').all().map((i) => i.json).filter((c) => c && c.id !== undefined && c.id !== null);\n\n// --- normalización ---\nconst proveedor = txtOrNull(d.proveedor);\nconst proveedor_norm = normalizarProveedor(proveedor);\nconst numero = txtOrNull(d.numero);\nconst total = num(d.total);\nconst fecha_emision = fechaValida(d.fecha_emision) ? d.fecha_emision : null;\nconst fecha_vencimiento = fechaValida(d.fecha_vencimiento) ? d.fecha_vencimiento : null;\nconst fecha_operacion = fechaValida(d.fecha_operacion) ? d.fecha_operacion : fecha_emision;\nlet confianza = num(d.confianza);\nconfianza = confianza === null ? 0 : Math.min(1, Math.max(0, confianza));\nconst tipo_gasto = ['puntual', 'suscripcion', 'contrato'].includes(d.tipo_gasto) ? d.tipo_gasto : 'puntual';\nconst PERIODOS = ['semanal', 'mensual', 'bimestral', 'trimestral', 'semestral', 'anual'];\nconst periodicidad = tipo_gasto !== 'puntual' && PERIODOS.includes(d.periodicidad) ? d.periodicidad : null;\nconst lineas = Array.isArray(d.lineas) ? d.lineas.slice(0, 40).map((l) => ({\n  descripcion: txtOrNull(l && l.descripcion) || '',\n  cantidad: num(l && l.cantidad),\n  precio_unitario: num(l && l.precio_unitario),\n  importe: num(l && l.importe),\n})) : [];\n\n// --- cliente: parámetro cliente_id > NIF del destinatario > «Personal» ---\nconst destinatario_nif = normalizarNif(txtOrNull(d.destinatario_nif));\nconst activos = clientes.filter((c) => c.activo !== false);\nlet cliente = null;\nlet asignacion = 'personal';\nif (archivo.cliente_id) { cliente = clientes.find((c) => c.id === archivo.cliente_id) || null; asignacion = 'parametro'; }\nif (!cliente && destinatario_nif) {\n  cliente = activos.find((c) => normalizarNif(c.nif) === destinatario_nif) || null;\n  if (cliente) asignacion = 'destinatario_nif';\n}\nif (!cliente) { cliente = clientes.find((c) => c.nombre === 'Personal') || activos.find((c) => c.regimen_iva === 'particular') || null; asignacion = 'personal'; }\nconst clienteId = cliente ? cliente.id : null;\n\n// === TIPO SUMINISTRO: inicio ===\n// Detector determinista del tipo de suministro por el CONTENIDO (no por la marca: Endesa, Iberdrola,\n// Naturgy o Energía XXI venden luz y gas). Puntúa cada tipo con patrones sobre el texto de la factura,\n// las descripciones de las líneas, la subcategoría y el nombre del archivo.\nconst SUM_CAT = { luz: 'Luz', gas: 'Gas', agua: 'Agua', telefonia: 'Telefonía e internet' };\nconst SUM_PAT = {\n  luz: [[/factura de electricidad|factura de luz|suministro (de )?electric/, 8], [/potencia contratada/, 4], [/energia activa/, 3],\n    [/impuesto (sobre la )?electricidad|impuesto electricidad/, 4], [/\\bpeajes? de (transporte|acceso)|\\bpeajes?\\b/, 2], [/\\b[23]\\.0 ?td\\b|\\b6\\.1 ?td\\b/, 4],\n    [/termino de potencia|termino fijo.{0,20}potencia/, 3], [/punta-llano|\\bvalle\\b.{0,30}\\bkw\\b|\\bkw\\b/, 2], [/discriminacion horaria|contador electrico|alquiler (del )?contador/, 2], [/\\belectricidad\\b|\\belectrica\\b|\\bluz\\b/, 1]],\n  gas: [[/factura de gas\\b/, 8], [/datos del contrato de gas|informacion del consumo gas/, 5], [/termino (fijo|energia|variable) gas|alquiler de equipos gas/, 5],\n    [/gas natural/, 4], [/tipo de gas/, 3], [/kwh ?\\/ ?m3/, 4], [/poder calorifico|\\bpcs\\b|coeficiente de conversion/, 3], [/\\b(butano|propano|glp)\\b/, 4], [/enagas|red de gas/, 2], [/\\bgas\\b/, 1]],\n  agua: [[/factura de agua|consumo de agua|m3 de agua|suministro de agua/, 6], [/canal de isabel|aigues|emasesa|aguas de /, 5], [/alcantarillado/, 4], [/depuracion/, 3], [/saneamiento/, 3],\n    [/abastecimiento/, 3], [/tasa de basuras|cuota de servicio/, 2], [/\\bagua\\b/, 1]],\n  telefonia: [[/\\bfibra\\b/, 4], [/movistar|vodafone|orange|masmovil|\\bdigi\\b|yoigo|pepephone|jazztel|\\bo2\\b|simyo|lowi/, 3], [/\\blineas? (movil|fija|5g|4g)|lineas? 5g|\\b5g\\+?/, 3],\n    [/datos moviles|\\bgb\\b|roaming|\\bsms\\b/, 2], [/\\binternet\\b/, 2], [/llamadas/, 2], [/telefono|telefonia|\\bmovil(es)?\\b/, 1], [/\\bfusion\\b/, 2]],\n};\nconst sumNorm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/m³/g, 'm3').replace(/[  \\t]+/g, ' ');\n// textos: { texto, lineas: [descripciones], subcategoria, archivo }. El archivo suma 3 puntos por tipo (pista débil).\nconst detectarSuministro = (textos) => {\n  const cuerpo = sumNorm([textos.texto, ...(textos.lineas || []), textos.subcategoria].filter(Boolean).join('\\n'));\n  const nombre = sumNorm(textos.archivo);\n  const puntos = { luz: 0, gas: 0, agua: 0, telefonia: 0 };\n  for (const t of Object.keys(SUM_PAT)) for (const [re, w] of SUM_PAT[t]) if (re.test(cuerpo)) puntos[t] += w;\n  if (/(^|[^a-z])(luz|electricidad)([^a-z]|$)/.test(nombre)) puntos.luz += 3;\n  if (/(^|[^a-z])gas([^a-z]|$)/.test(nombre)) puntos.gas += 3;\n  if (/(^|[^a-z])agua([^a-z]|$)/.test(nombre)) puntos.agua += 3;\n  if (/telefon|movistar|internet|fibra/.test(nombre)) puntos.telefonia += 3;\n  const orden = Object.keys(puntos).sort((a, b) => puntos[b] - puntos[a]);\n  const mejor = puntos[orden[0]], segundo = puntos[orden[1]];\n  return {\n    tipo: mejor > 0 ? orden[0] : null, puntos,\n    concluyente: mejor >= 6 && mejor >= 2 * segundo, // fija el tipo, por encima de Gemini\n    evidencia: mejor >= 4 && mejor > segundo, // basta para avisar de una incoherencia\n  };\n};\n// Tipo final: detector concluyente > tipo_suministro de Gemini (luz/gas/agua/telefonia) > ninguno.\nconst decidirSuministro = (det, tipoGemini) => {\n  if (det.concluyente) return { tipo: det.tipo, origen: 'contenido' };\n  if (SUM_CAT[tipoGemini]) return { tipo: tipoGemini, origen: 'gemini' };\n  return { tipo: null, origen: null };\n};\n// === TIPO SUMINISTRO: fin ===\n\n// --- categoría: el tipo de suministro se decide por el CONTENIDO; una regla de proveedor nunca impone Luz/Gas/Agua/Telefonía sobre otro tipo ---\nlet categoria = categorias.includes(d.categoria) ? d.categoria : 'Otros';\nlet subcategoria = txtOrNull(d.subcategoria);\nlet origen_categoria = 'llm';\nconst det = detectarSuministro({ texto: prep.texto_factura, lineas: lineas.map((l) => l.descripcion), subcategoria, archivo: archivo.archivo });\nconst sumin = decidirSuministro(det, d.tipo_suministro);\nconst catSum = Object.values(SUM_CAT);\nif (sumin.tipo && categorias.includes(SUM_CAT[sumin.tipo])) categoria = SUM_CAT[sumin.tipo];\nconst reglaCat = buscarRegla(reglas, proveedor_norm, clienteId, 'categoria');\n// Las reglas de proveedor con categoría de suministro se ignoran siempre: el tipo sale del contenido (o de Gemini), nunca de la marca.\nif (reglaCat && !catSum.includes(reglaCat.categoria)) {\n  categoria = reglaCat.categoria;\n  if (txtOrNull(reglaCat.subcategoria)) subcategoria = reglaCat.subcategoria;\n  origen_categoria = 'regla';\n}\nconst incoherencia = catSum.includes(categoria) && det.evidencia && SUM_CAT[det.tipo] !== categoria ? SUM_CAT[det.tipo] : null;\n\n// --- desglose: ticket con IVA incluido sin base ni cuota => base y cuota calculadas aquí a partir del tipo leído ---\n// Propina / redondeo (ticket): importe sumado al total que no está en ninguna base de IVA; se trata como suplido para que Σ cuadre.\nconst propina = Math.max(0, num(d.propina_redondeo) || 0);\nconst suplidosLeidos = r2(cent(num(d.suplidos) || 0) + cent(propina));\nconst exentaLeida = num(d.base_exenta) || 0;\nconst crudo = Array.isArray(d.desglose_iva) ? d.desglose_iva : [];\nconst calculadas = [];\nconst desgloseLeido = crudo.map((l) => {\n  const x = { base: num(l && l.base), tipo_iva: num(l && l.tipo_iva), cuota_iva: num(l && l.cuota_iva), tipo_re: num(l && l.tipo_re), cuota_re: num(l && l.cuota_re) };\n  if (x.base === null && x.cuota_iva === null && x.tipo_iva !== null && x.tipo_iva > 0) {\n    let conIva = num(l && l.importe_con_iva);\n    if (conIva === null && crudo.length === 1 && total !== null) conIva = r2(cent(total) - cent(exentaLeida) - cent(suplidosLeidos));\n    if (conIva !== null) {\n      const tre = x.tipo_re || 0;\n      const baseC = Math.round((cent(conIva) * 100) / (100 + x.tipo_iva + tre));\n      const reC = tre ? Math.round((baseC * tre) / 100) : 0;\n      x.base = r2(baseC);\n      x.cuota_iva = r2(cent(conIva) - baseC - reC);\n      if (tre) x.cuota_re = r2(reC);\n      calculadas.push(x.tipo_iva);\n    }\n  }\n  return x;\n});\n\nconst fx = completarFiscal({\n  nif: txtOrNull(d.nif), destinatario_nif, numero, categoria, tipo_factura: d.tipo_factura,\n  desglose: desgloseLeido, base_exenta: exentaLeida, suplidos: suplidosLeidos,\n  irpf_tipo: d.irpf_tipo, irpf_cuota: d.irpf_cuota, total, moneda: g.moneda, tipo_cambio: null,\n  operacion: null, mencion: d.mencion_operacion, tipo_autorrepercusion: d.tipo_iva_autorrepercusion,\n}, cliente, null);\n\n// --- tipo de cambio (BCE) si la moneda no es EUR ---\nif (fx.moneda !== 'EUR') {\n  const resp = $input.first().json || {};\n  const tc = tipoCambioBce(typeof resp.data === 'string' ? resp.data : null, g.bce.fecha);\n  const c = aplicarCambio({ moneda: fx.moneda, total: fx.total }, tc);\n  fx.tipo_cambio = c.tipo_cambio;\n  fx.total_eur = c.total_eur;\n}\nconst cuentas = resolverCuenta(proveedor_norm, categoria, clienteId, reglas, filasCategorias);\n\n// --- validación (bloque común) + umbral de confianza (solo Ingesta) ---\nconst errores = validarFactura({\n  proveedor, total: fx.total, desglose: fx.desglose, base_exenta: fx.base_exenta, suplidos: fx.suplidos,\n  irpf_cuota: fx.irpf_cuota, total_a_pagar_leido: num(d.total_a_pagar), tipo_factura: fx.tipo_factura,\n  fecha_emision, moneda: fx.moneda, total_eur: fx.total_eur,\n}, hoy);\nif (incoherencia) errores.push(`La categoría (${categoria}) no coincide con el contenido de la factura (parece ${incoherencia}).`);\nif (confianza < 0.75) errores.push(`Confianza de extracción baja (${confianza.toFixed(2)} < 0,75).`);\n// Tickets: foto borrosa/torcida con importes ilegibles => revisar con motivo claro\nconst legibilidad = ['buena', 'dudosa', 'mala'].includes(d.legibilidad) ? d.legibilidad : 'buena';\nif (legibilidad === 'mala') errores.push('Imagen borrosa, torcida o cortada: los importes no se leen con seguridad. Revisa el ticket y corrige los datos.');\nconst hora = typeof d.hora === 'string' && /^([01]?\\d|2[0-3]):[0-5]\\d$/.test(d.hora.trim()) ? d.hora.trim().padStart(5, '0') : null;\nlet motivoTxt = txtOrNull(d.motivo);\nif (propina > 0) motivoTxt = ((motivoTxt || '') + ` Incluye propina/redondeo de ${propina.toFixed(2).replace('.', ',')} €.`).trim();\nif (legibilidad === 'dudosa') motivoTxt = ((motivoTxt || '') + ' Imagen de calidad dudosa: conviene comprobar los importes.').trim();\n\n// --- pago: pagada si el documento lo dice o si el método implica cargo inmediato ---\nconst metodo_pago = normalizarMetodoPago(d.metodo_pago);\nconst CARGO = ['tarjeta', 'paypal', 'efectivo', 'bizum', 'domiciliación', 'domiciliacion'];\nconst vencida = fecha_vencimiento && fecha_vencimiento > hoy;\nconst pagada = d.pagada === true || (CARGO.includes(String(metodo_pago || '').toLowerCase()) && !vencida);\n\n// --- ruta del original: AAAA/MM de la fecha de emisión (o de hoy si no es válida) ---\nconst fRuta = fecha_emision && fecha_emision <= hoy ? fecha_emision : hoy;\nconst archivo_ruta = `/home/node/.n8n-files/facturas/${fRuta.slice(0, 4)}/${fRuta.slice(5, 7)}/${archivo.hash}.${archivo.ext}`;\n\nconst fila = {\n  usuario_id: 'default',\n  hash_sha256: archivo.hash,\n  archivo_ruta,\n  archivo_nombre: archivo.archivo,\n  mime: archivo.mime,\n  proveedor,\n  proveedor_norm,\n  nif: fx.nif,\n  numero,\n  fecha_emision,\n  fecha_vencimiento,\n  lineas_json: JSON.stringify(lineas),\n  base: fx.base,\n  iva_tipo: fx.iva_tipo,\n  iva_cuota: fx.iva_cuota,\n  total: fx.total,\n  moneda: fx.moneda,\n  metodo_pago,\n  categoria,\n  subcategoria,\n  tipo_gasto,\n  periodicidad,\n  confianza: Math.round(confianza * 100) / 100,\n  motivo: motivoTxt,\n  estado: errores.length ? 'revisar' : 'ok',\n  errores_validacion: null,\n  origen_categoria,\n  creado: ahora,\n  actualizado: ahora,\n  cliente_id: clienteId,\n  destinatario_nif: fx.destinatario_nif,\n  tipo_factura: fx.tipo_factura,\n  rectifica_numero: txtOrNull(d.rectifica_numero),\n  fecha_operacion,\n  operacion: fx.operacion,\n  desglose_iva_json: fx.desglose_iva_json,\n  base_exenta: fx.base_exenta,\n  cuota_re: fx.cuota_re,\n  irpf_tipo: fx.irpf_tipo,\n  irpf_cuota: fx.irpf_cuota,\n  suplidos: fx.suplidos,\n  total_a_pagar: fx.total_a_pagar,\n  cuota_autorrepercutida: fx.cuota_autorrepercutida,\n  nif_valido: fx.nif_valido,\n  deducible: fx.deducible,\n  motivo_deducible: fx.motivo_deducible,\n  cuota_deducible: fx.cuota_deducible,\n  cuenta_gasto: cuentas.cuenta_gasto,\n  cuenta_proveedor: cuentas.cuenta_proveedor,\n  tipo_cambio: fx.tipo_cambio,\n  total_eur: fx.total_eur,\n  num_recepcion: null,\n  estado_pago: pagada ? 'pagada' : 'pendiente',\n  fecha_pago: pagada ? fecha_emision : null,\n  movimiento_id: null,\n  hora,\n};\n\nconst extraccion = { modo: prep.modo, modelo: g.modelo, cliente: asignacion };\nif (calculadas.length) extraccion.base_calculada = calculadas;\nreturn [{ json: { _error: false, orden: archivo.orden, archivo: archivo.archivo, extraccion, errores, fila } }];\n"
+        }
+      },
+      {
+        "id": "c8649213-9230-401d-a77f-fa70e8936890",
+        "name": "¿Error de extracción?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3600,
+          400
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "err",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "919ba3bc-8dfe-4dc0-b1ee-6d5b8cef380d",
+        "name": "Buscar duplicado lógico",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          3840,
+          500
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "cliente_id",
+                "condition": "eq",
+                "keyValue": "={{ $json.fila.cliente_id }}"
+              }
+            ]
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "68552ce3-22f9-42bb-b025-5e60b88c3490",
+        "name": "Decidir estado final",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          4080,
+          500
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Entrada: todas las facturas del mismo cliente (cualquier estado).\n// 1) Duplicado lógico: mismo proveedor_norm + número + total (al céntimo) en una\n//    factura no borrada del cliente => posible_duplicada. Si no, revisar/ok.\n// 2) Nº de recepción: siguiente correlativo del cliente en el año de emisión\n//    (misma regla que siguienteRecepcion del bloque COMÚN; las borradas no liberan su número).\nconst v = $('Interpretar y validar').first().json;\nconst fila = { ...v.fila };\nconst errores = [...(v.errores || [])];\nconst delCliente = $input.all().map((i) => i.json).filter((x) => x && x.id !== undefined && x.id !== null && x.cliente_id === fila.cliente_id);\n\nlet estado = errores.length ? 'revisar' : 'ok';\nif (fila.proveedor_norm && fila.numero && fila.total !== null) {\n  const dup = delCliente.find((x) => x.estado !== 'borrada' && x.proveedor_norm === fila.proveedor_norm && x.numero === fila.numero && x.total !== null && Math.round(x.total * 100) === Math.round(fila.total * 100));\n  if (dup) {\n    estado = 'posible_duplicada';\n    errores.push(`Posible duplicada de la factura id ${dup.id} (mismo proveedor, número y total).`);\n  }\n}\n// Ticket sin número: duplicado lógico = mismo proveedor + fecha + total (+ hora si ambos la tienen y es distinta => no es duplicado).\nif (estado !== 'posible_duplicada' && !fila.numero && fila.proveedor_norm && fila.fecha_emision && fila.total !== null) {\n  const dupT = delCliente.find((x) => x.estado !== 'borrada' && !x.numero && x.proveedor_norm === fila.proveedor_norm && x.fecha_emision === fila.fecha_emision && x.total !== null && Math.round(x.total * 100) === Math.round(fila.total * 100) && !(x.hora && fila.hora && x.hora !== fila.hora));\n  if (dupT) {\n    estado = 'posible_duplicada';\n    errores.push(`Posible duplicada del ticket id ${dupT.id} (mismo comercio, fecha${fila.hora ? ', hora' : ''} e importe).`);\n  }\n}\nfila.estado = estado;\nfila.errores_validacion = errores.length ? errores.join(' | ') : null;\n\nconst hoy = $now.setZone('Europe/Madrid').toISODate();\nconst anio = (fila.fecha_emision && fila.fecha_emision <= hoy ? fila.fecha_emision : hoy).slice(0, 4);\nlet max = 0;\nfor (const x of delCliente) {\n  if (typeof x.num_recepcion === 'string' && x.num_recepcion.startsWith(anio + '-')) {\n    const n = Number(x.num_recepcion.slice(5));\n    if (Number.isFinite(n) && n > max) max = n;\n  }\n}\nfila.num_recepcion = `${anio}-${String(max + 1).padStart(6, '0')}`;\n\nconst original = $('Recorrer archivos').first(1);\nreturn [{ json: { orden: v.orden, archivo: v.archivo, extraccion: v.extraccion, fila }, binary: original.binary }];\n"
+        }
+      },
+      {
+        "id": "95741236-5f3b-40d4-bace-0bda1dbe0474",
+        "name": "Guardar original",
+        "type": "n8n-nodes-base.readWriteFile",
+        "typeVersion": 1.1,
+        "position": [
+          4560,
+          500
+        ],
+        "parameters": {
+          "operation": "write",
+          "fileName": "={{ $json.fila.archivo_ruta }}",
+          "dataPropertyName": "data"
+        }
+      },
+      {
+        "id": "bad2b81d-0f55-4f54-bd5a-bce475506370",
+        "name": "Preparar fila",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          4800,
+          500
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Fila exacta para fact_facturas (autoMapInputData).\nreturn [{ json: $('Decidir estado final').first().json.fila }];\n"
+        }
+      },
+      {
+        "id": "3824e5d8-3031-4fde-b08d-10a868cab2df",
+        "name": "Insertar factura",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          5040,
+          500
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "insert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "columns": {
+            "mappingMode": "autoMapInputData",
+            "value": {},
+            "matchingColumns": [],
+            "schema": []
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "7f418906-cb37-4110-b05c-9be43aa3c273",
+        "name": "Resultado procesada",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          5280,
+          500
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "const f = $input.first().json;\nconst d = $('Decidir estado final').first().json;\nconst res = { orden: d.orden, archivo: d.archivo, estado: f.estado, factura: f, extraccion: d.extraccion };\nif (f.estado !== 'ok' && f.errores_validacion) res.error = f.errores_validacion;\nreturn [{ json: res }];\n"
+        }
+      },
+      {
+        "id": "3f1eafdb-d770-4e3e-97c6-2e74918e5844",
+        "name": "Sticky Note bf0b98a3",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          0,
+          -300
+        ],
+        "parameters": {
+          "content": "## FACT — Ingesta\nPOST /webhook/facturas (multipart, campo `archivo`, uno o varios; `cliente_id` opcional en el multipart o la query). Header Auth `X-API-Key`.\n\n1. Lee categorías, reglas y clientes una vez.\n2. Separa archivos, valida cliente_id, tipo real (firma) y tamaño ≤ 10 MB, calcula SHA-256.\n3. Bucle de 1 en 1 (secuencial: duplicados y nº de recepción correctos dentro de la misma petición).\n4. Duplicado exacto por hash → `duplicada`.\n5. PDF con texto → Extract From File; imagen o PDF escaneado → Gemini visión (principal flash-lite, respaldo flash). Gemini solo extrae (responseSchema con desglose por tipo, recargo, retención, suplidos, total y total a pagar por separado).\n6. Moneda ≠ EUR → BCE (solo moneda y fecha) → tipo de cambio.\n7. Code «Interpretar y validar» (bloque COMÚN con la API): cliente (cliente_id > NIF destinatario > Personal), reglas (cliente > global), base/cuota de tickets con IVA incluido, operación y autorrepercusión, NIF, deducibilidad, cuentas, validación.\n8. Duplicado lógico del cliente (proveedor+nº+total) → `posible_duplicada`; nº de recepción correlativo por cliente y año.\n9. \"Crear carpeta\" y guarda el original en /home/node/.n8n-files/facturas/AAAA/MM/<sha256>.<ext> y la fila en fact_facturas.",
+          "color": 7,
+          "width": 900,
+          "height": 360
+        }
+      },
+      {
+        "id": "294257c8-c256-4b1b-85f8-2235b7b6d541",
+        "name": "¿Falló el modelo principal?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3240,
+          560
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "fallo",
+                "leftValue": "={{ $json.error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "object",
+                  "operation": "exists",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "90d0f50e-2337-462e-b627-a256d80bae0b",
+        "name": "Gemini respaldo",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          3240,
+          760
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + $('Preparar petición Gemini').first().json.modelo_respaldo + ':generateContent' }}",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googlePalmApi",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($('Preparar petición Gemini').first().json.peticion) }}",
+          "options": {
+            "timeout": 180000
+          }
+        },
+        "credentials": {
+          "googlePalmApi": {
+            "id": "pGeL1IfQ1fQkcUwW",
+            "name": "Google Gemini(PaLM) Api account"
+          }
+        },
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 5000
+      },
+      {
+        "id": "3b7f5fbb-8d50-4336-be7f-44a6a3ee68a6",
+        "name": "Crear carpeta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          4320,
+          500
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Crea la carpeta AAAA/MM del original antes de escribirlo (el nodo Read/Write\n// Files no crea carpetas). AAAA/MM = fecha de emisión; si no es válida o es\n// futura, mes de subida (lo decide \"Interpretar y validar\").\nconst fs = require('fs');\nconst path = require('path');\nconst RAIZ = '/home/node/.n8n-files/facturas/';\nreturn $input.all().map((it) => {\n  const ruta = path.posix.normalize(String((it.json.fila && it.json.fila.archivo_ruta) || ''));\n  if (!ruta.startsWith(RAIZ) || !/^\\d{4}\\/\\d{2}\\/[0-9a-f]{64}\\.[a-z0-9]+$/.test(ruta.slice(RAIZ.length))) {\n    throw new Error('Ruta del original no válida para el almacén.');\n  }\n  fs.mkdirSync(path.posix.dirname(ruta), { recursive: true });\n  return { json: it.json, binary: it.binary };\n});"
+        }
+      },
+      {
+        "id": "70a36c90-2f05-485e-b58a-95d5f1c44256",
+        "name": "Leer clientes",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          600,
+          160
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "vFk59qcLmkSdGzZg",
+            "cachedResultName": "fact_clientes"
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true,
+        "executeOnce": true
+      },
+      {
+        "id": "70c4bd43-14f5-424e-806f-d3560822b120",
+        "name": "Leer respuesta Gemini",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3360,
+          880
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Lee la respuesta de Gemini (principal o respaldo) y decide si hace falta el\n// tipo de cambio del BCE. Al BCE solo se envían la moneda y la fecha.\nconst prep = $('Preparar petición Gemini').first().json;\nconst r = $input.first().json || {};\nconst fallo = (msg) => [{ json: { _error: true, error: msg, moneda: 'EUR' } }];\n\nif (prep.modo === 'error') return fallo(prep.error || 'No se pudo preparar el archivo para su lectura.');\nif (r.error) {\n  const msg = typeof r.error === 'string' ? r.error : (r.error.message || '');\n  return fallo('No se pudo extraer la factura con Gemini: ' + String(msg).slice(0, 150));\n}\nconst cand = (r.candidates || [])[0];\nconst txt = cand && cand.content && Array.isArray(cand.content.parts) ? cand.content.parts.map((p) => p.text || '').join('') : '';\nif (!txt) {\n  const razon = (cand && cand.finishReason) || (r.promptFeedback && r.promptFeedback.blockReason) || 'sin respuesta';\n  return fallo('Gemini no devolvió datos (' + razon + ').');\n}\nlet d;\ntry { d = JSON.parse(txt); } catch (e) { return fallo('La respuesta de Gemini no es un JSON válido.'); }\nif (!d || typeof d !== 'object' || Array.isArray(d)) return fallo('La respuesta de Gemini no es un objeto JSON.');\n\nconst SIMBOLOS = { '€': 'EUR', EURO: 'EUR', EUROS: 'EUR', $: 'USD', US$: 'USD', USD$: 'USD', '£': 'GBP' };\nlet moneda = typeof d.moneda === 'string' && d.moneda.trim() ? d.moneda.trim().toUpperCase() : 'EUR';\nmoneda = SIMBOLOS[moneda] || moneda;\nif (!/^[A-Z]{3}$/.test(moneda)) moneda = 'EUR';\n\nconst hoy = $now.setZone('Europe/Madrid').toISODate();\nconst okFecha = typeof d.fecha_emision === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(d.fecha_emision) && DateTime.fromISO(d.fecha_emision).isValid && d.fecha_emision <= hoy;\nconst finBce = okFecha ? d.fecha_emision : hoy; // BCE: día de emisión o el último hábil anterior (ventana de 7 días)\nconst inicioBce = DateTime.fromISO(finBce).minus({ days: 7 }).toISODate();\nreturn [{ json: { _error: false, d, modelo: r.modelVersion || null, moneda, bce: { fecha: finBce, desde: inicioBce } } }];\n"
+        }
+      },
+      {
+        "id": "18bebfb3-66a7-4f59-a1b1-40304cb3e08a",
+        "name": "¿Moneda extranjera?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3480,
+          880
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "sin_error",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              },
+              {
+                "id": "no_eur",
+                "leftValue": "={{ $json.moneda }}",
+                "rightValue": "EUR",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEquals"
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "767a68d6-fdeb-4820-8b21-8fbed686d524",
+        "name": "BCE tipo de cambio",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          3600,
+          1040
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "=https://data-api.ecb.europa.eu/service/data/EXR/D.{{ $json.moneda }}.EUR.SP00.A",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "startPeriod",
+                "value": "={{ $json.bce.desde }}"
+              },
+              {
+                "name": "endPeriod",
+                "value": "={{ $json.bce.fecha }}"
+              },
+              {
+                "name": "format",
+                "value": "csvdata"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000,
+            "response": {
+              "response": {
+                "responseFormat": "text",
+                "outputPropertyName": "data"
+              }
+            }
+          }
+        },
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 2000
+      }
+    ],
+    "connections": {
+      "Recibir facturas": {
+        "main": [
+          [
+            {
+              "node": "Leer categorías",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Esperar lecturas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer categorías": {
+        "main": [
+          [
+            {
+              "node": "Leer reglas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Esperar lecturas": {
+        "main": [
+          [
+            {
+              "node": "Preparar archivos",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar archivos": {
+        "main": [
+          [
+            {
+              "node": "Recorrer archivos",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Construir respuesta": {
+        "main": [
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Archivo válido?": {
+        "main": [
+          [
+            {
+              "node": "Buscar por hash",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resultado sin procesar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Buscar por hash": {
+        "main": [
+          [
+            {
+              "node": "¿Ya registrada?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Ya registrada?": {
+        "main": [
+          [
+            {
+              "node": "Resultado duplicada",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Recuperar binario",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resultado duplicada": {
+        "main": [
+          [
+            {
+              "node": "Recorrer archivos",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Recorrer archivos": {
+        "main": [
+          [
+            {
+              "node": "Construir respuesta",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "¿Archivo válido?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Recuperar binario": {
+        "main": [
+          [
+            {
+              "node": "¿Es PDF?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Es PDF?": {
+        "main": [
+          [
+            {
+              "node": "Extraer texto PDF",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Preparar petición Gemini",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extraer texto PDF": {
+        "main": [
+          [
+            {
+              "node": "Preparar petición Gemini",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar petición Gemini": {
+        "main": [
+          [
+            {
+              "node": "Gemini extraer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resultado sin procesar": {
+        "main": [
+          [
+            {
+              "node": "Recorrer archivos",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Interpretar y validar": {
+        "main": [
+          [
+            {
+              "node": "¿Error de extracción?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Error de extracción?": {
+        "main": [
+          [
+            {
+              "node": "Resultado sin procesar",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Buscar duplicado lógico",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Buscar duplicado lógico": {
+        "main": [
+          [
+            {
+              "node": "Decidir estado final",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Guardar original": {
+        "main": [
+          [
+            {
+              "node": "Preparar fila",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar fila": {
+        "main": [
+          [
+            {
+              "node": "Insertar factura",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Insertar factura": {
+        "main": [
+          [
+            {
+              "node": "Resultado procesada",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resultado procesada": {
+        "main": [
+          [
+            {
+              "node": "Recorrer archivos",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Gemini extraer": {
+        "main": [
+          [
+            {
+              "node": "¿Falló el modelo principal?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Falló el modelo principal?": {
+        "main": [
+          [
+            {
+              "node": "Gemini respaldo",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Leer respuesta Gemini",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Decidir estado final": {
+        "main": [
+          [
+            {
+              "node": "Crear carpeta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Crear carpeta": {
+        "main": [
+          [
+            {
+              "node": "Guardar original",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer reglas": {
+        "main": [
+          [
+            {
+              "node": "Leer clientes",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer clientes": {
+        "main": [
+          [
+            {
+              "node": "Esperar lecturas",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Gemini respaldo": {
+        "main": [
+          [
+            {
+              "node": "Leer respuesta Gemini",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer respuesta Gemini": {
+        "main": [
+          [
+            {
+              "node": "¿Moneda extranjera?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Moneda extranjera?": {
+        "main": [
+          [
+            {
+              "node": "BCE tipo de cambio",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Interpretar y validar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "BCE tipo de cambio": {
+        "main": [
+          [
+            {
+              "node": "Interpretar y validar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "errorWorkflow": "V08lXHOvWDQal70V",
+      "timezone": "Europe/Madrid",
+      "executionTimeout": 900
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "nodeGroups": [
+      {
+        "id": "3af4b808-e1c3-46d5-860d-652678057b0a",
+        "name": "Lecturas iniciales",
+        "nodeIds": [
+          "c3e02faf-db52-4abf-b90a-2f5769e8ada3",
+          "69c1f728-ab29-4b66-ab33-ef8d97c9f66c",
+          "70a36c90-2f05-485e-b58a-95d5f1c44256"
+        ],
+        "description": "Lee la taxonomía (fact_categorias), las reglas aprendidas (fact_reglas) y los clientes (fact_clientes) una sola vez por petición."
+      },
+      {
+        "id": "ec356d35-f8d8-46c0-b074-3e0fb1ec3bc6",
+        "name": "Separar y validar archivos",
+        "nodeIds": [
+          "faebb09b-1810-42ed-aff5-6a5048466a8f",
+          "ce18dad2-90dc-4dd1-b0ee-0c09d444dec5"
+        ],
+        "description": "Un item por archivo: cliente_id opcional, tipo real por firma (PDF/JPG/PNG/WEBP/HEIC), tamaño ≤ 10 MB y SHA-256."
+      },
+      {
+        "id": "19a68c71-132f-4e08-9206-90edd94240a0",
+        "name": "Respuesta",
+        "nodeIds": [
+          "d2cdf2c7-3323-41c0-b4da-5c7427a2bbe6",
+          "dd78354b-2321-4ac6-a6f2-2e2ee647fdef"
+        ],
+        "description": "Ordena los resultados y responde {resultados:[{archivo, estado, factura?, error?}]}."
+      },
+      {
+        "id": "9e13e132-2e18-4e2f-b8ac-ca5bf477ba16",
+        "name": "Duplicado exacto",
+        "nodeIds": [
+          "501a5d24-f9c3-4a50-94cb-6acd57734f10",
+          "93e2735b-a0c2-4b2c-9119-45fbb7f614de"
+        ],
+        "description": "Busca el SHA-256 en fact_facturas (excluye borradas)."
+      },
+      {
+        "id": "7940e1f0-69b6-4be5-aa19-9b47a223c299",
+        "name": "Duplicado lógico y guardado",
+        "nodeIds": [
+          "919ba3bc-8dfe-4dc0-b1ee-6d5b8cef380d",
+          "68552ce3-22f9-42bb-b025-5e60b88c3490",
+          "3b7f5fbb-8d50-4336-be7f-44a6a3ee68a6",
+          "95741236-5f3b-40d4-bace-0bda1dbe0474",
+          "bad2b81d-0f55-4f54-bd5a-bce475506370",
+          "3824e5d8-3031-4fde-b08d-10a868cab2df",
+          "7f418906-cb37-4110-b05c-9be43aa3c273"
+        ],
+        "description": "Duplicado lógico del cliente, nº de recepción por cliente y año, carpeta AAAA/MM, original en disco y fila en fact_facturas."
+      },
+      {
+        "id": "1bdf03d5-153f-48cf-b858-499f05f4045d",
+        "name": "Lectura con Gemini y tipo de cambio",
+        "nodeIds": [
+          "39a942b4-a753-4ca8-bba6-834e179c1b24",
+          "a3b4c317-edb0-4d44-b945-b5ef6f54b2df",
+          "a9da858c-a531-421c-b816-a826b74d4573",
+          "602ce684-a2fa-46b4-8887-4b97f7f70e79",
+          "05e57ab0-e28b-4f9d-9a7b-d3c57814ee48",
+          "294257c8-c256-4b1b-85f8-2235b7b6d541",
+          "90d0f50e-2337-462e-b627-a256d80bae0b",
+          "70c4bd43-14f5-424e-806f-d3560822b120",
+          "18bebfb3-66a7-4f59-a1b1-40304cb3e08a",
+          "767a68d6-fdeb-4820-8b21-8fbed686d524",
+          "9f75f380-2e81-47ae-95f3-1696921b31d8"
+        ],
+        "description": "PDF con texto o visión → Gemini (flash-lite, respaldo flash) → BCE si no es EUR → bloque COMÚN: cliente, reglas, fiscal, validación."
+      }
+    ],
+    "pinData": null,
+    "versionId": "4f1b1899-d112-4737-8699-bd66a0fef5ad",
+    "activeVersionId": "4f1b1899-d112-4737-8699-bd66a0fef5ad",
+    "versionCounter": 15,
+    "triggerCount": 1,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-10-14T17:31:26.636Z",
+        "createdAt": "2026-10-14T17:31:26.636Z",
+        "role": "workflow:owner",
+        "workflowId": "XsVbiul39k797Ury",
+        "projectId": "bZtIqKac0YRZrt14",
+        "project": {
+          "updatedAt": "2026-10-08T21:42:10.105Z",
+          "createdAt": "2026-10-08T21:41:04.349Z",
+          "id": "bZtIqKac0YRZrt14",
+          "name": "Jaime Gomez <tu-correo@ejemplo.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "bd591b97-d638-4c8a-9c0b-ccbab2197267"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Reglas de suministros ignoradas",
+      "description": "Updated nodes: Interpretar y validar"
+    }
+  }
+]

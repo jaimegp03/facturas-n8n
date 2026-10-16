@@ -1,0 +1,365 @@
+[
+  {
+    "updatedAt": "2026-10-15T05:00:09.992Z",
+    "createdAt": "2026-10-15T00:08:00.190Z",
+    "id": "MSwqgl62QaYcNj61",
+    "name": "FACT — TEMP auditoría: borrar TEST",
+    "description": "TEMPORAL auditoría 2026-10-15: borra filas de prueba TEST· / TEST_ de fact_facturas y test* de fact_reglas. No ejecutar sin revisar; archivar al terminar.",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "ab20b37b-24d1-4c6d-ab84-1fd681d39338",
+        "name": "Ejecutar a mano",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          200
+        ],
+        "parameters": {}
+      },
+      {
+        "id": "0d08c453-c636-4329-8b8c-96e7dbf362f4",
+        "name": "Borrar TEST en fact_facturas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          300,
+          100
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "deleteRows",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "anyCondition",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "proveedor",
+                "condition": "like",
+                "keyValue": "TEST·%"
+              },
+              {
+                "keyName": "archivo_nombre",
+                "condition": "like",
+                "keyValue": "TEST_%"
+              }
+            ]
+          },
+          "options": {
+            "dryRun": false
+          }
+        },
+        "executeOnce": true
+      },
+      {
+        "id": "c82c795b-c85c-451c-b370-453431ca83d4",
+        "name": "Borrar test en fact_reglas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          300,
+          320
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "deleteRows",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "oQBEGmTUhFU6mN8i",
+            "cachedResultName": "fact_reglas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "proveedor_norm",
+                "condition": "like",
+                "keyValue": "test%"
+              }
+            ]
+          },
+          "options": {
+            "dryRun": false
+          }
+        },
+        "executeOnce": true
+      },
+      {
+        "id": "8f096b80-a1f6-4821-9434-0a15d69edeab",
+        "name": "Sticky Note 0a8ad757",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          100,
+          300
+        ],
+        "parameters": {
+          "content": "## TEMPORAL (auditoría 2026-10-15; ampliado en las tandas A, B y C del modo gestoría)\nBorra de fact_facturas las filas con proveedor que empieza por «TEST·» o archivo_nombre que empieza por «TEST_»; de fact_reglas las de proveedor_norm que empieza por «test» y las de los clientes TEST; de fact_movimientos y fact_recomendaciones las de los clientes TEST; y de fact_clientes los clientes cuyo nombre empieza por «TEST·».\nSQLite: like se traduce a GLOB (sensible a mayúsculas; «_» es literal; % = cualquier cosa).\nLo usa tests/fixture_gestoria.py borrar. Archivar al terminar.",
+          "color": 3
+        }
+      },
+      {
+        "id": "14da0ffd-cebd-4d48-a8fb-3ea06c854505",
+        "name": "Leer clientes TEST",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          260,
+          420
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "vFk59qcLmkSdGzZg",
+            "cachedResultName": "fact_clientes"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "nombre",
+                "condition": "like",
+                "keyValue": "TEST·%"
+              }
+            ]
+          },
+          "returnAll": true
+        }
+      },
+      {
+        "id": "6e0e9606-88ba-4f23-a405-ed853f6619a4",
+        "name": "Borrar reglas de clientes TEST",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          520,
+          420
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "deleteRows",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "oQBEGmTUhFU6mN8i",
+            "cachedResultName": "fact_reglas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "cliente_id",
+                "condition": "eq",
+                "keyValue": "={{ $json.id }}"
+              }
+            ]
+          },
+          "options": {
+            "dryRun": false
+          }
+        }
+      },
+      {
+        "id": "f6908221-3bcf-4881-992d-13717ab405f9",
+        "name": "Borrar clientes TEST",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          700,
+          880
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "deleteRows",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "vFk59qcLmkSdGzZg",
+            "cachedResultName": "fact_clientes"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "nombre",
+                "condition": "like",
+                "keyValue": "TEST·%"
+              }
+            ]
+          },
+          "options": {
+            "dryRun": false
+          }
+        },
+        "executeOnce": true
+      },
+      {
+        "id": "8603afeb-50dd-42e7-9c9a-508ca2a893cb",
+        "name": "Borrar movimientos de clientes TEST",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          700,
+          520
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "deleteRows",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "AlnHkQASriQlekIA",
+            "cachedResultName": "fact_movimientos"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "cliente_id",
+                "condition": "eq",
+                "keyValue": "={{ $json.id }}"
+              }
+            ]
+          },
+          "options": {
+            "dryRun": false
+          }
+        }
+      },
+      {
+        "id": "ac5e0038-8b7e-43c3-9bd1-6e484597347b",
+        "name": "Borrar recomendaciones de clientes TEST",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          700,
+          700
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "deleteRows",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "0LOu68SrmyMgKOIi",
+            "cachedResultName": "fact_recomendaciones"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "cliente_id",
+                "condition": "eq",
+                "keyValue": "={{ $json.id }}"
+              }
+            ]
+          },
+          "options": {
+            "dryRun": false
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Ejecutar a mano": {
+        "main": [
+          [
+            {
+              "node": "Borrar TEST en fact_facturas",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Borrar test en fact_reglas",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Leer clientes TEST",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer clientes TEST": {
+        "main": [
+          [
+            {
+              "node": "Borrar reglas de clientes TEST",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Borrar movimientos de clientes TEST",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Borrar recomendaciones de clientes TEST",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Borrar clientes TEST",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "nodeGroups": [],
+    "pinData": null,
+    "versionId": "e3de4926-b7a0-46e7-b824-a7b63249d581",
+    "activeVersionId": null,
+    "versionCounter": 3,
+    "triggerCount": 0,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-10-15T00:08:00.194Z",
+        "createdAt": "2026-10-15T00:08:00.194Z",
+        "role": "workflow:owner",
+        "workflowId": "MSwqgl62QaYcNj61",
+        "projectId": "bZtIqKac0YRZrt14",
+        "project": {
+          "updatedAt": "2026-10-08T21:42:10.105Z",
+          "createdAt": "2026-10-08T21:41:04.349Z",
+          "id": "bZtIqKac0YRZrt14",
+          "name": "Jaime Gomez <tu-correo@ejemplo.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "bd591b97-d638-4c8a-9c0b-ccbab2197267"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Borra también movimientos y recomendaciones TEST",
+      "description": "Added nodes: Borrar movimientos de clientes TEST, Borrar recomendaciones de clientes TEST\nUpdated nodes: Sticky Note 0a8ad757\nConnections: 3 added, 1 removed"
+    }
+  }
+]

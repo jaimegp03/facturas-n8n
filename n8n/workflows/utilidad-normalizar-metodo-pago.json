@@ -1,0 +1,208 @@
+[
+  {
+    "updatedAt": "2026-10-14T22:26:31.735Z",
+    "createdAt": "2026-10-14T22:26:31.735Z",
+    "id": "cngdQXp4secFn2kf",
+    "name": "FACT — Utilidad: normalizar metodo_pago",
+    "description": "Manual: primera letra en mayúscula en metodo_pago de fact_facturas (solo ese campo).",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "a9e33ad6-bc57-499c-b3f5-b6537f3d4bea",
+        "name": "Inicio",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          0
+        ],
+        "parameters": {}
+      },
+      {
+        "id": "09f03f97-efff-40c0-bc8b-0e3af263d579",
+        "name": "Leer facturas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          220,
+          0
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "usuario_id",
+                "condition": "eq",
+                "keyValue": "default"
+              }
+            ]
+          },
+          "returnAll": true
+        }
+      },
+      {
+        "id": "66c2de3f-1e40-4e87-8f8e-f8c7a726b10a",
+        "name": "Calcular cambios",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          440,
+          0
+        ],
+        "parameters": {
+          "jsCode": "// Mismo criterio que normalizarMetodoPago (bloque COMÚN Ingesta/API): primera letra en mayúscula,\n// el resto como venga. Solo devuelve las filas que cambian (id + metodo_pago).\nconst txtOrNull = (s) => (typeof s === 'string' && s.trim() ? s.trim() : null);\nconst normalizarMetodoPago = (s) => { const t = txtOrNull(s); return t ? t.charAt(0).toLocaleUpperCase('es-ES') + t.slice(1) : null; };\nconst out = [];\nfor (const f of $input.all().map((i) => i.json)) {\n  if (!f || f.id === undefined || f.id === null || f.metodo_pago === null || f.metodo_pago === undefined) continue;\n  const nuevo = normalizarMetodoPago(f.metodo_pago);\n  if (nuevo !== f.metodo_pago) out.push({ json: { id: f.id, metodo_pago: nuevo } });\n}\nreturn out;"
+        }
+      },
+      {
+        "id": "bf2fa8bb-50b4-4f25-b1bb-b2c5fa2477ee",
+        "name": "Actualizar metodo_pago",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          660,
+          0
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $json.id }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "metodo_pago": "={{ $json.metodo_pago }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "metodo_pago",
+                "displayName": "metodo_pago",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "8fee8cdf-e939-4355-af4c-5a36940ea7b6",
+        "name": "Sticky Note a3b92cf1",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -60,
+          -220
+        ],
+        "parameters": {
+          "content": "## FACT — Utilidad: normalizar metodo_pago\nSolo ejecución manual. Pone en mayúscula la primera letra de `metodo_pago` en fact_facturas (resto igual) y no toca ningún otro campo. Idempotente: si no hay nada que cambiar, no escribe.",
+          "width": 520,
+          "height": 160
+        }
+      }
+    ],
+    "connections": {
+      "Inicio": {
+        "main": [
+          [
+            {
+              "node": "Leer facturas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer facturas": {
+        "main": [
+          [
+            {
+              "node": "Calcular cambios",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Calcular cambios": {
+        "main": [
+          [
+            {
+              "node": "Actualizar metodo_pago",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "nodeGroups": [],
+    "pinData": null,
+    "versionId": "f233004c-a45a-4b2e-8188-dc2bee413d6f",
+    "activeVersionId": null,
+    "versionCounter": 1,
+    "triggerCount": 0,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-10-14T22:26:31.738Z",
+        "createdAt": "2026-10-14T22:26:31.738Z",
+        "role": "workflow:owner",
+        "workflowId": "cngdQXp4secFn2kf",
+        "projectId": "bZtIqKac0YRZrt14",
+        "project": {
+          "updatedAt": "2026-10-08T21:42:10.105Z",
+          "createdAt": "2026-10-08T21:41:04.349Z",
+          "id": "bZtIqKac0YRZrt14",
+          "name": "Jaime Gomez <tu-correo@ejemplo.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "bd591b97-d638-4c8a-9c0b-ccbab2197267"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Normalizar metodo_pago",
+      "description": "Created with 5 nodes: Inicio, Leer facturas, Calcular cambios, Actualizar metodo_pago, Sticky Note a3b92cf1"
+    }
+  }
+]

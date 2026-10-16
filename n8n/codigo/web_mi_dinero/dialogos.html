@@ -1,0 +1,99 @@
+
+<dialog id="dlgNomina" aria-labelledby="nomTit">
+  <form class="dlg" id="nomForm" novalidate>
+    <h2 id="nomTit">Simulador de nómina</h2>
+    <p class="fin-legal" role="note"><strong>Estimación orientativa.</strong> El IRPF real depende de tu situación personal y familiar, y la Seguridad Social usa bases y topes de cotización. Usa los porcentajes de tu última nómina para afinar.</p>
+    <div class="fin-grid">
+      <div class="field"><label for="nomBruto">Salario bruto anual (€)</label><input id="nomBruto" type="number" step="any" min="0" inputmode="decimal" required></div>
+      <div class="field"><label for="nomPagas">Número de pagas</label><select id="nomPagas"><option value="12">12</option><option value="14" selected>14</option></select></div>
+      <div class="full"><label class="fin-chk" for="nomProrr"><input id="nomProrr" type="checkbox"> Las pagas extra van prorrateadas en la nómina</label></div>
+      <div class="field"><label for="nomIrpf">Retención de IRPF (%)</label><input id="nomIrpf" type="number" step="any" min="0" max="60" value="15" inputmode="decimal"></div>
+      <div class="field"><label for="nomSs">Seguridad Social (%)</label><input id="nomSs" type="number" step="any" min="0" max="30" value="6.5" inputmode="decimal"></div>
+      <div class="field full"><label for="nomOtros">Otros descuentos mensuales (€)</label><input id="nomOtros" type="number" step="any" min="0" value="0" inputmode="decimal"><small>Seguro médico, ticket restaurante, etc.</small></div>
+    </div>
+    <p class="msg" id="nomMsg" role="status"></p>
+    <div id="nomRes" aria-live="polite"></div>
+    <div class="dlg-actions">
+      <button class="btn btn-ghost" type="button" id="nomCerrar">Cerrar</button>
+      <button class="btn btn-primary" type="submit" id="nomCalcular">Calcular</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgIngreso" aria-labelledby="ingTit">
+  <form class="dlg" id="ingForm" novalidate>
+    <h2 id="ingTit">Añadir ingreso</h2>
+    <div class="fin-grid">
+      <div class="field"><label for="ingTipo">Tipo</label><select id="ingTipo"><option value="nomina">Nómina</option><option value="extra">Extra</option><option value="otros">Otros</option></select></div>
+      <div class="field"><label for="ingPer">Periodicidad</label><select id="ingPer"><option value="mensual">Mensual</option><option value="anual">Anual (cuenta 1/12 al mes)</option><option value="puntual">Puntual (solo en su mes)</option></select></div>
+      <div class="field full"><label for="ingConcepto">Concepto</label><input id="ingConcepto" type="text" maxlength="120" required placeholder="Sueldo, alquiler, venta…"></div>
+      <div class="field"><label for="ingImporte">Importe neto (€)</label><input id="ingImporte" type="number" step="any" min="0" inputmode="decimal" required></div>
+      <div class="field"><label for="ingDia">Día de cobro (opcional)</label><input id="ingDia" type="number" min="1" max="31" step="1" inputmode="numeric"></div>
+      <div class="field"><label for="ingIni">Desde</label><input id="ingIni" type="date" required></div>
+      <div class="field"><label for="ingFin">Hasta (opcional)</label><input id="ingFin" type="date"></div>
+      <div class="full"><label class="fin-chk" for="ingActivo"><input id="ingActivo" type="checkbox" checked> Activo</label></div>
+    </div>
+    <p class="msg" id="ingMsg" role="status"></p>
+    <div class="dlg-actions">
+      <button class="btn btn-ghost" type="button" id="ingCancel">Cancelar</button>
+      <button class="btn btn-primary" type="submit" id="ingGuardar">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgMeta" aria-labelledby="mtTit">
+  <form class="dlg" id="mtForm" novalidate>
+    <h2 id="mtTit">Nueva meta de ahorro</h2>
+    <div class="fin-grid">
+      <div class="field full"><label for="mtNombre">Nombre</label><input id="mtNombre" type="text" maxlength="80" required placeholder="Vacaciones, fondo de emergencia…"></div>
+      <div class="field"><label for="mtObjetivo">Importe objetivo (€)</label><input id="mtObjetivo" type="number" step="any" min="0" inputmode="decimal" required></div>
+      <div class="field"><label for="mtAhorrado">Ya ahorrado (€)</label><input id="mtAhorrado" type="number" step="any" min="0" inputmode="decimal" value="0"></div>
+      <div class="field"><label for="mtFecha">Fecha objetivo</label><input id="mtFecha" type="date" required></div>
+      <div class="field"><label for="mtPrev">Aportación mensual prevista (€)</label><input id="mtPrev" type="number" step="any" min="0" inputmode="decimal"><small>Opcional. Si la dejas vacía se usa tu ahorro libre.</small></div>
+      <div class="full"><label class="fin-chk" for="mtActiva"><input id="mtActiva" type="checkbox" checked> Meta activa</label></div>
+    </div>
+    <p class="msg" id="mtFormMsg" role="status"></p>
+    <div class="dlg-actions">
+      <button class="btn btn-ghost" type="button" id="mtCancel">Cancelar</button>
+      <button class="btn btn-primary" type="submit">Guardar</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="dlgDeuda" aria-labelledby="deTit">
+  <form class="dlg" id="deForm" novalidate>
+    <h2 id="deTit">Nueva deuda</h2>
+    <div class="fin-grid">
+      <div class="field full"><label for="deNombre">Nombre</label><input id="deNombre" type="text" maxlength="80" required placeholder="Hipoteca, préstamo del coche…"></div>
+      <div class="field"><label for="deTipo">Tipo</label><select id="deTipo"><option value="hipoteca">Hipoteca</option><option value="prestamo">Préstamo</option><option value="coche">Coche</option><option value="tarjeta">Tarjeta</option><option value="otro">Otro</option></select></div>
+      <div class="field"><label for="deCapital">Capital inicial (€)</label><input id="deCapital" type="number" step="any" min="0" inputmode="decimal" required></div>
+      <div class="field"><label for="deInteres">Interés anual (%)</label><input id="deInteres" type="number" step="any" min="0" max="100" inputmode="decimal" required></div>
+      <div class="field"><label for="dePlazo">Plazo (meses)</label><input id="dePlazo" type="number" step="1" min="1" max="720" inputmode="numeric" required></div>
+      <div class="field"><label for="deInicio">Fecha de inicio</label><input id="deInicio" type="date" required></div>
+      <div class="field"><label for="deDia">Día de pago</label><input id="deDia" type="number" step="1" min="1" max="31" inputmode="numeric"><small>Opcional. Por defecto, el día de la fecha de inicio.</small></div>
+      <div class="field"><label for="deCuota">Cuota mensual (€)</label><input id="deCuota" type="number" step="any" min="0" inputmode="decimal"><small>Opcional. Vacía: se calcula por el sistema francés.</small></div>
+      <div class="field"><label for="deExtra">Amortizado extra ya hecho (€)</label><input id="deExtra" type="number" step="any" min="0" inputmode="decimal" value="0"></div>
+      <div class="full"><label class="fin-chk" for="deActiva"><input id="deActiva" type="checkbox" checked> Deuda activa</label></div>
+    </div>
+    <p class="msg" id="deFormMsg" role="status"></p>
+    <div class="dlg-actions">
+      <button class="btn btn-ghost" type="button" id="deCancel">Cancelar</button>
+      <button class="btn btn-primary" type="submit">Guardar</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="dlgSimular" aria-labelledby="dsTit">
+  <form class="dlg" id="dsForm" novalidate>
+    <h2 id="dsTit">Simular amortización</h2>
+    <div class="fin-grid">
+      <div class="field"><label for="dsImporte">Importe a amortizar (€)</label><input id="dsImporte" type="number" step="any" min="0" inputmode="decimal" required></div>
+      <div class="field"><label for="dsTipo">Qué prefieres</label><select id="dsTipo"><option value="reducir_plazo">Reducir el plazo</option><option value="reducir_cuota">Reducir la cuota</option></select></div>
+    </div>
+    <p class="msg" id="dsMsg" role="status"></p>
+    <div class="tscroll" tabindex="0"><table class="md-tbl" id="dsTabla"></table></div>
+    <p class="hint" id="dsAhorro"></p>
+    <div class="dlg-actions">
+      <button class="btn btn-ghost" type="button" id="dsCerrar">Cerrar</button>
+      <button class="btn btn-primary" type="submit">Simular</button>
+    </div>
+  </form>
+</dialog>

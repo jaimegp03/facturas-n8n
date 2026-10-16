@@ -1,0 +1,14 @@
+.env
+.venv/
+almacen/
+*.bak*
+tests/salida/
+tests/e2e/node_modules/
+*.tgz
+
+__pycache__/
+*.pyc
+tests/e2e/test-results/
+tests/e2e/playwright-report/
+# datos reales del usuario (facturas de suministros): no se publican
+docs/auditoria-suministros.md

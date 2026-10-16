@@ -1,0 +1,401 @@
+[
+  {
+    "updatedAt": "2026-10-15T05:09:59.530Z",
+    "createdAt": "2026-10-14T18:58:50.396Z",
+    "id": "eLB9OcZZ9kjh2gxF",
+    "name": "FACT — Exportar Excel",
+    "description": "GET /exportar?desde&hasta: XLSX con ExcelJS (Resumen, Facturas como Tabla, Por mes, Suscripciones y contratos, Recomendaciones) con fórmulas SUMIFS/SUM, estilos y formato condicional.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "2a80e9ef-c701-44b7-82c5-8577b6603090",
+        "name": "GET /exportar",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          300
+        ],
+        "parameters": {
+          "httpMethod": "GET",
+          "path": "exportar",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "webhookId": "9b0506d2-a351-4d7d-9521-2b86b9e2bf9b",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        }
+      },
+      {
+        "id": "a4fde21d-18d6-4fdc-8cbe-10dc907954eb",
+        "name": "Parámetros",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          300
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// GET /exportar: desde/hasta en la query (AAAA-MM-DD). Por defecto, últimos 12 meses\n// hasta hoy (Europe/Madrid), igual que GET /resumen y POST /asesor.\nconst e = $input.first().json || {};\nconst esWebhook = e.headers !== undefined && typeof e.headers === 'object';\nconst origen = esWebhook ? 'webhook' : 'schedule';\nconst cuerpo = esWebhook && e.body && typeof e.body === 'object' && !Array.isArray(e.body) ? e.body : {};\nconst query = esWebhook && e.query && typeof e.query === 'object' ? e.query : {};\nconst fechaValida = (s) => {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return false;\n  const [y, m, d] = s.split('-').map(Number);\n  const dt = new Date(Date.UTC(y, m - 1, d));\n  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;\n};\nconst errores = [];\nconst leer = (k) => {\n  const v = cuerpo[k] !== undefined && cuerpo[k] !== null && cuerpo[k] !== '' ? cuerpo[k] : query[k];\n  if (v === undefined || v === null || v === '') return null;\n  if (typeof v !== 'string' || !fechaValida(v.trim())) { errores.push(`\"${k}\" debe ser una fecha AAAA-MM-DD válida.`); return null; }\n  return v.trim();\n};\nconst ahora = $now.setZone('Europe/Madrid');\nconst hoy = ahora.toISODate();\nlet desde = leer('desde');\nlet hasta = leer('hasta');\nif (!errores.length) {\n  if (!hasta) hasta = hoy;\n  if (!desde) desde = ahora.minus({ years: 1 }).plus({ days: 1 }).toISODate();\n  if (desde > hasta) errores.push('\"desde\" no puede ser posterior a \"hasta\".');\n}\n// cliente_id (opcional): limita el cálculo a un cliente de la gestoría.\nconst crudoCliente = cuerpo.cliente_id !== undefined && cuerpo.cliente_id !== null && cuerpo.cliente_id !== '' ? cuerpo.cliente_id : query.cliente_id;\nlet cliente_id = null;\nif (crudoCliente !== undefined && crudoCliente !== null && String(crudoCliente).trim() !== '') {\n  if (!/^\\d{1,12}$/.test(String(crudoCliente).trim())) errores.push('\"cliente_id\" debe ser un entero positivo.');\n  else cliente_id = Number(String(crudoCliente).trim());\n}\nif (errores.length) return [{ json: { origen, _error: true, status: 400, body: { error: 'Parámetros no válidos.', detalles: errores } } }];\nreturn [{ json: { origen, _error: false, desde, hasta, hoy, cliente_id, generado: ahora.toISO() } }];\n"
+        }
+      },
+      {
+        "id": "6435db3b-675c-438d-8c25-e1cac568ad18",
+        "name": "¿Parámetros válidos?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          480,
+          300
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "d4bc0e09-ed3c-4304-a16a-ef61c23c9872",
+        "name": "Leer facturas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          720,
+          200
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "usuario_id",
+                "condition": "eq",
+                "keyValue": "default"
+              }
+            ]
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "1e61ee6d-f501-4501-ae31-3500ba972025",
+        "name": "Leer última recomendación",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          960,
+          200
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "0LOu68SrmyMgKOIi",
+            "cachedResultName": "fact_recomendaciones"
+          },
+          "returnAll": true
+        },
+        "executeOnce": true,
+        "alwaysOutputData": true
+      },
+      {
+        "id": "936aaa9e-d6ad-48d0-86f3-b08e999287b9",
+        "name": "Generar Excel",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1200,
+          200
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Genera Gastos_AAAA-MM-DD.xlsx con ExcelJS. Las tablas de resumen usan FÓRMULAS\n// (SUMIFS/COUNTIFS/SUM sobre la hoja Facturas); los valores calculados aquí en céntimos\n// se guardan como resultado en caché de cada fórmula (Excel recalcula al abrir).\nconst ExcelJS = require('exceljs');\nconst p = $('Parámetros').first().json;\nconst { desde, hasta, hoy } = p;\nconst DIA = 86400000;\nconst aMs = (s) => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };\nconst aFecha = (ms) => new Date(ms).toISOString().slice(0, 10);\n// Fechas como número de serie de Excel (días desde 1899-12-30) con formato dd/mm/yyyy: es como Excel\n// guarda las fechas. No se usan objetos Date porque el task runner de n8n los crea en otro contexto\n// (vm) y ExcelJS no los reconoce (instanceof Date falla) y los escribe como texto.\nconst aSerial = (s) => (typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) ? aMs(s) / DIA + 25569 : null);\n// Por el mismo motivo, las filas se escriben celda a celda (addRow/values con arrays del sandbox fallan).\nconst ponerFila = (ws, r, valores) => valores.forEach((v, i) => { if (v !== undefined && v !== null) ws.getRow(r).getCell(i + 1).value = v; });\nconst fmtFecha = (s) => s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4);\nconst EXCLUIDOS = ['borrada', 'duplicada'];\n// Textos legibles solo para mostrar en las hojas (los datos guardan los códigos). Ninguna fórmula filtra por\n// tipo ni por estado (SUMIFS/COUNTIFS usan categoría y fecha), así que cambiar estos textos no afecta a los cálculos.\nconst TIPO_TXT = { puntual: 'Puntual', suscripcion: 'Suscripción', contrato: 'Contrato' };\nconst ESTADO_TXT = { ok: 'Correcta', revisar: 'Revisar', posible_duplicada: 'Posible duplicada', duplicada: 'Duplicada', borrada: 'Borrada' };\nconst mayuscula = (s) => { const t = typeof s === 'string' ? s.trim() : ''; return t ? t.charAt(0).toLocaleUpperCase('es-ES') + t.slice(1) : null; };\nconst txtTipo = (t) => (t ? TIPO_TXT[t] || mayuscula(t) : null);\nconst txtEstado = (e) => (e ? ESTADO_TXT[e] || mayuscula(e) : null);\nconst TXT_DEDUCIBLE = { si: 'Sí', no: 'No', parcial: 'Parcial', dudoso: 'Dudoso', na: 'No aplica' };\n\n// === COMÚN Fiscal: inicio ===\n// Bloque idéntico en FACT — Fiscal («Fiscal: calcular») y FACT — Exportar Excel («Generar Excel»).\n// Si cambias algo aquí, cópialo en los dos (fuente: n8n/codigo/comun_fiscal.js). Céntimos enteros.\n// Diseño: docs/diseno-gestoria.md §4. Todas las cifras en EUR: cada importe de la factura (que se guarda\n// en su moneda) se convierte con su tipo_cambio, también la cuota autorrepercutida y la deducible.\nconst FX_VALIDOS = ['ok', 'revisar', 'posible_duplicada'];\nconst FX_AUTORREP = ['intracomunitaria', 'isp_nacional', 'extracomunitaria'];\nconst FX_UMBRAL_347 = 300506; // 3.005,06 € (se declara si se supera)\nconst FX_UE = new Set(['AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'EL', 'GR', 'FI', 'FR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK', 'XI']);\nconst fxCent = (x) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x * 100) : 0);\nconst fxEuros = (c) => Math.round(c) / 100;\nconst fxNif = (s) => {\n  if (s === null || s === undefined) return null;\n  let v = String(s).toUpperCase().replace(/[\\s.\\-\\/]/g, '');\n  if (/^ES[0-9A-Z]\\d{7}[0-9A-Z]$/.test(v)) v = v.slice(2);\n  return v || null;\n};\nconst fxOrigenNif = (s) => {\n  const v = fxNif(s);\n  if (!v) return null;\n  if (/^(\\d|[A-Z]\\d)/.test(v)) return 'ES';\n  return FX_UE.has(v.slice(0, 2)) ? 'UE' : 'EXT';\n};\nconst fxFecha = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s);\nconst fxTrimestreDe = (fecha) => Math.floor((Number(fecha.slice(5, 7)) - 1) / 3) + 1;\nconst fxPeriodo = (anio, trimestre) => {\n  if (!trimestre) return { desde: `${anio}-01-01`, hasta: `${anio}-12-31` };\n  const m1 = (trimestre - 1) * 3 + 1;\n  const fin = { 1: '03-31', 2: '06-30', 3: '09-30', 4: '12-31' }[trimestre];\n  return { desde: `${anio}-${String(m1).padStart(2, '0')}-01`, hasta: `${anio}-${fin}` };\n};\n// EUR por unidad de la moneda de la factura (1 si EUR); null si falta el tipo de cambio.\nconst fxCambio = (f) => (!f.moneda || f.moneda === 'EUR' ? 1 : (typeof f.tipo_cambio === 'number' && f.tipo_cambio > 0 ? f.tipo_cambio : null));\nconst fxDesglose = (f) => {\n  let d = [];\n  try { d = JSON.parse(f.desglose_iva_json || '[]'); } catch (e) { d = []; }\n  if (!Array.isArray(d)) d = [];\n  d = d.filter((l) => l && typeof l === 'object' && (typeof l.base === 'number' || typeof l.cuota_iva === 'number'));\n  if (!d.length && typeof f.base === 'number') { // filas antiguas sin desglose: base/iva_tipo/iva_cuota\n    const baseC = fxCent(f.base) - fxCent(f.base_exenta || 0);\n    if (baseC !== 0 || fxCent(f.iva_cuota || 0) !== 0) d = [{ base: baseC / 100, tipo_iva: f.iva_tipo || 0, cuota_iva: f.iva_cuota || 0, tipo_re: 0, cuota_re: 0 }];\n  }\n  return d;\n};\n// Normaliza una factura a céntimos en EUR. cliente = fila de fact_clientes (prorrata y régimen).\nconst fxPreparar = (f, cliente) => {\n  const tc = fxCambio(f);\n  const aE = (x) => (tc === null ? 0 : Math.round(fxCent(x || 0) * tc));\n  const deducible = f.deducible || 'na';\n  const prorrata = cliente && typeof cliente.prorrata_pct === 'number' && cliente.prorrata_pct >= 0 && cliente.prorrata_pct <= 100 ? cliente.prorrata_pct : 100;\n  const pct = deducible === 'si' || deducible === 'parcial' ? prorrata : 0;\n  const lineas = fxDesglose(f).map((l) => {\n    const cuotaC = aE(l.cuota_iva);\n    return { baseC: aE(l.base), tipo: typeof l.tipo_iva === 'number' ? l.tipo_iva : 0, cuotaC, tipoRe: typeof l.tipo_re === 'number' ? l.tipo_re : 0, reC: aE(l.cuota_re), dedC: Math.round((cuotaC * pct) / 100) };\n  });\n  const operacion = f.operacion || 'interior';\n  const autoC = FX_AUTORREP.includes(operacion) ? aE(f.cuota_autorrepercutida) : 0;\n  return {\n    id: f.id, cliente_id: f.cliente_id, estado: f.estado, fecha: f.fecha_emision, fecha_operacion: fxFecha(f.fecha_operacion) ? f.fecha_operacion : f.fecha_emision,\n    numero: f.numero || null, num_recepcion: f.num_recepcion || null, nif: fxNif(f.nif), origen: fxOrigenNif(f.nif), nombre: f.proveedor || '(sin proveedor)',\n    tipo_factura: f.tipo_factura || 'completa', operacion, deducible, motivo: f.motivo_deducible || null, pct, categoria: f.categoria || null,\n    cuenta_gasto: f.cuenta_gasto || '629', cuenta_proveedor: f.cuenta_proveedor || (String(f.cuenta_gasto || '').startsWith('60') ? '400' : '410'),\n    moneda: f.moneda || 'EUR', sinCambio: tc === null, nif_valido: f.nif_valido, lineas, exentaC: aE(f.base_exenta), autoC, autoDedC: Math.round((autoC * pct) / 100),\n    irpfTipo: f.irpf_tipo || 0, irpfC: aE(f.irpf_cuota), supC: aE(f.suplidos), totalC: aE(f.total), aPagarC: aE(typeof f.total_a_pagar === 'number' ? f.total_a_pagar : f.total),\n    estado_pago: f.estado_pago || 'pendiente', fecha_vencimiento: f.fecha_vencimiento || null, fecha_pago: f.fecha_pago || null,\n  };\n};\n// Retenciones: alquileres (cuenta 621 o categoría «Alquileres») → 115; resto → 111.\nconst fxModeloRet = (p) => (String(p.cuenta_gasto).startsWith('621') || p.categoria === 'Alquileres' ? '115' : '111');\n\n// --- Libro registro de facturas recibidas (art. 64.4 RIVA): una fila por tipo de IVA ---\n// Base exenta / no sujeta / ISP / intracomunitaria: fila con tipo 0 y la operación como clave\n// (y la cuota autorrepercutida en su columna).\nconst fxFilasLibro = (prep) => {\n  const filas = [];\n  for (const p of prep) {\n    const comun = { id: p.id, cliente_id: p.cliente_id, num_recepcion: p.num_recepcion, fecha_expedicion: p.fecha, fecha_operacion: p.fecha_operacion, numero: p.numero, nif: p.nif, nombre: p.nombre, tipo_factura: p.tipo_factura, operacion: p.operacion };\n    const antes = filas.length;\n    for (const l of p.lineas) {\n      filas.push({ ...comun, baseC: l.baseC, tipo_iva: l.tipo, cuotaC: l.cuotaC, tipo_re: l.tipoRe, reC: l.reC, autoC: 0, dedC: l.dedC, totalC: l.baseC + l.cuotaC + l.reC });\n    }\n    if (p.exentaC !== 0 || filas.length === antes) {\n      filas.push({ ...comun, baseC: p.exentaC, tipo_iva: 0, cuotaC: 0, tipo_re: 0, reC: 0, autoC: p.autoC, dedC: p.autoDedC, totalC: p.exentaC });\n    }\n  }\n  return filas;\n};\n\n// --- /fiscal (§4). prepAnio: facturas del cliente y del año (válidas, preparadas) ---\nconst fxCalcularFiscal = (prepAnio, cliente, anio, trimestre) => {\n  const { desde, hasta } = fxPeriodo(anio, trimestre);\n  const avisos = [];\n  const aviso = (codigo, mensaje, ids) => { if (!ids || ids.length) avisos.push({ codigo, mensaje, ids: ids || [] }); };\n  const enPeriodo = prepAnio.filter((p) => p.fecha >= desde && p.fecha <= hasta);\n  const sinCambio = enPeriodo.filter((p) => p.sinCambio);\n  aviso('sin_tipo_cambio', 'Facturas en otra moneda sin tipo de cambio: no se incluyen en ningún cálculo.', sinCambio.map((p) => p.id));\n  const per = enPeriodo.filter((p) => !p.sinCambio);\n  aviso('revisar', 'Facturas en «revisar» dentro del periodo: se incluyen, revísalas antes de presentar.', per.filter((p) => p.estado === 'revisar').map((p) => p.id));\n  aviso('posible_duplicada', 'Posibles duplicadas dentro del periodo: se incluyen; bórralas si lo son.', per.filter((p) => p.estado === 'posible_duplicada').map((p) => p.id));\n  aviso('nif_invalido', 'NIF del proveedor con dígito de control incorrecto: IVA no deducible hasta tener factura corregida.', per.filter((p) => p.nif_valido === false).map((p) => p.id));\n  aviso('sin_nif', 'Facturas sin NIF del proveedor (no entran en el 347).', per.filter((p) => !p.nif).map((p) => p.id));\n  aviso('sin_numero', 'Facturas sin número (IVA no deducible).', per.filter((p) => !p.numero).map((p) => p.id));\n  aviso('dudoso', 'Deducibilidad dudosa (restauración o viajes): no se suma al deducible; decide el contable.', per.filter((p) => p.deducible === 'dudoso').map((p) => p.id));\n  const importaciones = per.filter((p) => p.operacion === 'importacion');\n  aviso('importacion', 'Importaciones: el IVA se liquida con el DUA (casillas 32-35); no se incluyen.', importaciones.map((p) => p.id));\n  const regimen = (cliente && cliente.regimen_iva) || 'particular';\n  if (regimen === 'particular') aviso('regimen', 'Cliente particular: sin derecho a deducir; 303, 111, 115, 349 y 347 no le aplican (informativo).', null);\n  if (regimen === 'recargo_equivalencia') aviso('regimen', 'Cliente en recargo de equivalencia: no deduce el IVA de sus compras (el recargo es informativo).', null);\n  if (regimen === 'simplificado') aviso('regimen', 'Cliente en régimen simplificado: revisa la cuota deducible con el método de módulos.', null);\n  if (cliente && typeof cliente.prorrata_pct === 'number' && cliente.prorrata_pct < 100) aviso('prorrata', `Prorrata del ${cliente.prorrata_pct} % aplicada a las cuotas deducibles.`, null);\n\n  // IVA soportado interior por tipo (operaciones interiores y exentas con desglose)\n  const interiorMap = {};\n  const recargoMap = {};\n  let exentasC = 0;\n  for (const p of per.filter((x) => !FX_AUTORREP.includes(x.operacion) && x.operacion !== 'importacion')) {\n    for (const l of p.lineas) {\n      const k = String(l.tipo);\n      const t = (interiorMap[k] = interiorMap[k] || { tipo_iva: l.tipo, baseC: 0, cuotaC: 0, baseDedC: 0, dedC: 0 });\n      t.baseC += l.baseC; t.cuotaC += l.cuotaC; t.dedC += l.dedC;\n      if (l.dedC !== 0) t.baseDedC += l.baseC;\n      if (l.reC !== 0 || l.tipoRe) {\n        const kr = String(l.tipoRe);\n        const r = (recargoMap[kr] = recargoMap[kr] || { tipo_re: l.tipoRe, baseC: 0, cuotaC: 0 });\n        r.baseC += l.baseC; r.cuotaC += l.reC;\n      }\n    }\n    exentasC += p.exentaC;\n  }\n  const interior = Object.values(interiorMap).sort((a, b) => b.tipo_iva - a.tipo_iva)\n    .map((t) => ({ tipo_iva: t.tipo_iva, base: fxEuros(t.baseC), cuota: fxEuros(t.cuotaC), base_deducible: fxEuros(t.baseDedC), cuota_deducible: fxEuros(t.dedC) }));\n  const recargo = Object.values(recargoMap).sort((a, b) => b.tipo_re - a.tipo_re).map((r) => ({ tipo_re: r.tipo_re, base: fxEuros(r.baseC), cuota: fxEuros(r.cuotaC) }));\n  const bloqueAuto = (ops) => {\n    const xs = per.filter((p) => ops.includes(p.operacion));\n    return {\n      base: fxEuros(xs.reduce((s, p) => s + p.exentaC + p.lineas.reduce((a, l) => a + l.baseC, 0), 0)),\n      cuota_devengada: fxEuros(xs.reduce((s, p) => s + p.autoC, 0)),\n      cuota_deducible: fxEuros(xs.reduce((s, p) => s + p.autoDedC, 0)),\n      ids: xs.map((p) => p.id),\n    };\n  };\n  const intracomunitarias = bloqueAuto(['intracomunitaria']);\n  const isp = bloqueAuto(['isp_nacional', 'extracomunitaria']);\n  const interiorDedC = Object.values(interiorMap).reduce((s, t) => s + t.dedC, 0);\n  const totalDedC = interiorDedC + fxCent(intracomunitarias.cuota_deducible) + fxCent(isp.cuota_deducible);\n  const no_deducible = per.filter((p) => p.operacion !== 'importacion').map((p) => {\n    const ivaC = p.lineas.reduce((s, l) => s + l.cuotaC, 0) + p.autoC;\n    const dedC = p.lineas.reduce((s, l) => s + l.dedC, 0) + p.autoDedC;\n    return { id: p.id, proveedor: p.nombre, numero: p.numero, deducible: p.deducible, motivo: p.motivo, cuotaC: ivaC - dedC };\n  }).filter((x) => x.cuotaC !== 0).map((x) => ({ id: x.id, proveedor: x.proveedor, numero: x.numero, deducible: x.deducible, motivo: x.motivo, cuota: fxEuros(x.cuotaC) }));\n  const sumBase = (arr, campo) => arr.reduce((s, t) => s + t[campo], 0);\n  const casillas = {\n    '10': intracomunitarias.base, '11': intracomunitarias.cuota_devengada, '12': isp.base, '13': isp.cuota_devengada,\n    '28': fxEuros(sumBase(Object.values(interiorMap), 'baseDedC') + (fxCent(isp.cuota_deducible) ? fxCent(isp.base) : 0)),\n    '29': fxEuros(interiorDedC + fxCent(isp.cuota_deducible)),\n    '36': fxCent(intracomunitarias.cuota_deducible) ? intracomunitarias.base : 0, '37': intracomunitarias.cuota_deducible,\n  };\n\n  // Retenciones (111 profesionales y otros; 115 alquileres): perceptores = NIF distintos\n  const conRet = per.filter((p) => p.irpfC !== 0);\n  const modelo = (m) => {\n    const xs = conRet.filter((p) => fxModeloRet(p) === m).sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.id - b.id));\n    return {\n      num_perceptores: new Set(xs.map((p) => p.nif || `sin-nif:${p.nombre}`)).size,\n      base: fxEuros(xs.reduce((s, p) => s + p.lineas.reduce((a, l) => a + l.baseC, 0) + p.exentaC, 0)),\n      retencion: fxEuros(xs.reduce((s, p) => s + p.irpfC, 0)),\n      detalle: xs.map((p) => ({ id: p.id, fecha: p.fecha, proveedor: p.nombre, nif: p.nif, numero: p.numero, base: fxEuros(p.lineas.reduce((a, l) => a + l.baseC, 0) + p.exentaC), irpf_tipo: p.irpfTipo, retencion: fxEuros(p.irpfC) })),\n    };\n  };\n\n  // 349: adquisiciones intracomunitarias (clave I) agrupadas por NIF\n  const m349 = {};\n  for (const p of per.filter((x) => x.operacion === 'intracomunitaria')) {\n    const k = p.nif || `sin-nif:${p.nombre}`;\n    const g = (m349[k] = m349[k] || { nif: p.nif, nombre: p.nombre, clave: 'I', baseC: 0 });\n    g.baseC += p.exentaC + p.lineas.reduce((a, l) => a + l.baseC, 0);\n  }\n  const modelo_349 = Object.values(m349).map((g) => ({ nif: g.nif, nombre: g.nombre, clave: g.clave, base: fxEuros(g.baseC) })).sort((a, b) => b.base - a.base);\n\n  // 347 anual: por NIF normalizado, IVA incluido, neto de rectificativas; excluye operaciones con\n  // retención, intracomunitarias (349), proveedores extranjeros e importaciones; > 3.005,06 €.\n  const m347 = {};\n  for (const p of prepAnio.filter((x) => !x.sinCambio && x.nif && x.origen === 'ES' && x.irpfC === 0\n    && !['intracomunitaria', 'extracomunitaria', 'importacion'].includes(x.operacion)).sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.id - b.id))) {\n    const g = (m347[p.nif] = m347[p.nif] || { nif: p.nif, nombre: p.nombre, totalC: 0, tri: [0, 0, 0, 0] });\n    g.nombre = p.nombre;\n    g.totalC += p.totalC;\n    g.tri[fxTrimestreDe(p.fecha) - 1] += p.totalC;\n  }\n  const modelo_347_anual = regimen === 'particular' ? [] : Object.values(m347).filter((g) => g.totalC > FX_UMBRAL_347)\n    .map((g) => ({ nif: g.nif, nombre: g.nombre, total_anual: fxEuros(g.totalC), por_trimestre: g.tri.map(fxEuros) })).sort((a, b) => b.total_anual - a.total_anual);\n\n  return {\n    periodo: { anio, trimestre: trimestre || null, desde, hasta },\n    num_facturas: per.length,\n    iva_303: {\n      interior, recargo, intracomunitarias, isp, exentas_no_sujetas: { base: fxEuros(exentasC) },\n      total_deducible: fxEuros(totalDedC), no_deducible, casillas_referencia: casillas,\n    },\n    retenciones: { modelo_111: modelo('111'), modelo_115: modelo('115') },\n    modelo_349,\n    modelo_347_anual,\n    avisos,\n  };\n};\n\n// --- Asientos (§4): una línea por apunte; el 6xx cuadra el asiento (redondeos de céntimo) ---\n// debe 6xx (base + IVA no deducible + recargo + suplidos + autorrepercutida no deducible),\n// debe 472 (cuota deducible), debe 472 / haber 477 (autorrepercutida), haber 4751 (IRPF),\n// haber 400/410 (total a pagar). Si el 6xx calculado y el de cuadre difieren > 0,02 € se excluye.\nconst fxAsientos = (prep) => {\n  const lineas = [];\n  const excluidas = [];\n  let n = 0;\n  const orden = [...prep].sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : String(a.num_recepcion || '').localeCompare(String(b.num_recepcion || '')) || a.id - b.id));\n  for (const p of orden) {\n    const ivaC = p.lineas.reduce((s, l) => s + l.cuotaC, 0);\n    const ivaDedC = p.lineas.reduce((s, l) => s + l.dedC, 0);\n    const reC = p.lineas.reduce((s, l) => s + l.reC, 0);\n    const basesC = p.lineas.reduce((s, l) => s + l.baseC, 0) + p.exentaC;\n    const haber = [['4751', p.irpfC, 'Retención IRPF'], [p.cuenta_proveedor, p.aPagarC, 'Total a pagar'], ['477', p.autoC, 'IVA autorrepercutido']];\n    const haberC = haber.reduce((s, h) => s + h[1], 0);\n    const gastoC = haberC - ivaDedC - p.autoDedC;\n    const esperadoC = basesC + (ivaC - ivaDedC) + reC + p.supC + (p.autoC - p.autoDedC);\n    if (Math.abs(gastoC - esperadoC) > 2) { excluidas.push({ id: p.id, motivo: 'Los importes de la factura no cuadran (revísala).' }); continue; }\n    n += 1;\n    const concepto = `Fra. ${p.numero || 's/n'} ${p.nombre}`.slice(0, 60);\n    const documento = p.numero || p.num_recepcion || String(p.id);\n    const base = { asiento: n, fecha: p.fecha, concepto, documento, nif: p.nif, factura_id: p.id };\n    const debe = [[p.cuenta_gasto, gastoC], ['472', ivaDedC], ['472', p.autoDedC]];\n    for (const [cuenta, c] of debe) if (c !== 0) lineas.push({ ...base, cuenta, debeC: c, haberC: 0 });\n    for (const [cuenta, c] of haber) if (c !== 0) lineas.push({ ...base, cuenta, debeC: 0, haberC: c });\n  }\n  return { lineas, excluidas };\n};\n\n// --- CSV: «;», decimales con coma, fechas dd/mm/aaaa, UTF-8 con BOM, CRLF ---\nconst fxCsvCampo = (v) => {\n  if (v === null || v === undefined) return '';\n  const s = String(v);\n  return /[;\"\\r\\n]/.test(s) ? '\"' + s.replace(/\"/g, '\"\"') + '\"' : s;\n};\nconst fxCsvImporte = (c) => (c === null || c === undefined ? '' : (c < 0 ? '-' : '') + Math.floor(Math.abs(c) / 100) + ',' + String(Math.abs(c) % 100).padStart(2, '0'));\nconst fxCsvNum = (x) => (x === null || x === undefined ? '' : String(x).replace('.', ','));\nconst fxCsvFecha = (s) => (fxFecha(s) ? s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4) : '');\nconst fxCsv = (cabecera, filas) => '﻿' + [cabecera, ...filas].map((f) => f.map(fxCsvCampo).join(';')).join('\\r\\n') + '\\r\\n';\nconst fxSlug = (s) => String(s || 'cliente').normalize('NFD').replace(/\\p{M}/gu, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'cliente';\nconst FX_TXT_OPERACION = { interior: 'Interior', intracomunitaria: 'Intracomunitaria', isp_nacional: 'ISP nacional', extracomunitaria: 'Extracomunitaria', importacion: 'Importación', exenta: 'Exenta' };\nconst FX_TXT_TIPO = { completa: 'Completa', simplificada: 'Simplificada', simplificada_cualificada: 'Simplificada cualificada', rectificativa: 'Rectificativa' };\n// === COMÚN Fiscal: fin ===\n\n// === COMÚN Recurrentes: inicio ===\n// Bloque idéntico en FACT — API («Resumen: calcular»), FACT — Asesor de gastos\n// («Analizar y proponer») y FACT — Exportar Excel («Generar Excel»).\n// Si cambias algo aquí, cópialo en los tres. Céntimos enteros.\n// Por cada proveedor_norm con facturas suscripcion/contrato se toma la última\n// (fecha_emision; a igualdad, id) y la anterior. coste_anual = importe × periodos/año;\n// coste_mensual = coste_anual / 12 redondeado al céntimo; los totales suman esos valores.\nconst POR_ANIO = { semanal: 52, mensual: 12, bimestral: 6, trimestral: 4, semestral: 2, anual: 1 };\nconst centimos = (x) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x * 100) : 0);\nconst claveProveedor = (f) => f.proveedor_norm || String(f.proveedor || 'desconocido').toLowerCase();\nconst ordenFecha = (a, b) => (a.fecha_emision === b.fecha_emision ? a.id - b.id : a.fecha_emision < b.fecha_emision ? -1 : 1);\nconst calcularRecurrentes = (facturas) => {\n  const grupos = {};\n  for (const f of facturas.filter((x) => x.tipo_gasto === 'suscripcion' || x.tipo_gasto === 'contrato').sort(ordenFecha)) {\n    const k = claveProveedor(f);\n    (grupos[k] = grupos[k] || []).push(f);\n  }\n  let mensualC = 0;\n  let anualC = 0;\n  const items = Object.keys(grupos).map((clave) => {\n    const lista = grupos[clave];\n    const factura = lista[lista.length - 1];\n    const anterior = lista.length > 1 ? lista[lista.length - 2] : null;\n    const veces = POR_ANIO[factura.periodicidad] || null;\n    const importeC = centimos(factura.total);\n    const anual = veces ? importeC * veces : null;\n    const mensual = veces ? Math.round(anual / 12) : null;\n    if (veces) { anualC += anual; mensualC += mensual; }\n    return { clave, factura, anterior, num: lista.length, veces, importeC, mensualC: mensual, anualC: anual };\n  });\n  return { items, mensualC, anualC };\n};\n// === COMÚN Recurrentes: fin ===\n\nconst eur = (c) => Math.round(c) / 100;\n// Importes en EUROS (total_eur): nunca se suman monedas distintas. Filas antiguas en EUR sin\n// total_eur usan el total; una factura en otra moneda sin tipo de cambio no se incluye.\nconst enEuros = (f) => (typeof f.total_eur === 'number' && Number.isFinite(f.total_eur) ? f.total_eur\n  : (!f.moneda || f.moneda === 'EUR') && typeof f.total === 'number' ? f.total : null);\n// Tanda A del modo gestoría: todas las cifras del libro en EUR (base y cuota de una factura en otra\n// moneda se convierten con su tipo_cambio). cliente_id (opcional) limita el libro a un cliente.\nconst aEur = (x, f) => (typeof x !== 'number' ? x : (!f.moneda || f.moneda === 'EUR') ? x : Math.round(x * (f.tipo_cambio || 0) * 100) / 100);\nconst crudas = $('Leer facturas').all().map((i) => i.json)\n  .filter((f) => f && f.id !== undefined && f.id !== null && f.usuario_id === 'default' && (p.cliente_id === null || p.cliente_id === undefined || f.cliente_id === p.cliente_id));\nconst filas = crudas\n  .filter((f) => enEuros(f) !== null)\n  .map((f) => ({ ...f, base: aEur(f.base, f), iva_cuota: aEur(f.iva_cuota, f), irpf_cuota: aEur(f.irpf_cuota, f), total_a_pagar: aEur(f.total_a_pagar, f), total: enEuros(f), moneda: 'EUR' }));\n// Clientes de la gestoría (nombre en las hojas y prorrata/régimen para el cálculo fiscal).\nconst clientesPorId = {};\nfor (const it of $('Leer clientes').all()) if (it.json && it.json.id !== undefined && it.json.id !== null) clientesPorId[it.json.id] = it.json;\nconst nombreCliente = (id) => (clientesPorId[id] ? clientesPorId[id].nombre : null);\nconst validas = filas.filter((f) => !EXCLUIDOS.includes(f.estado) && typeof f.fecha_emision === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(f.fecha_emision));\nconst periodo = validas.filter((f) => f.fecha_emision >= desde && f.fecha_emision <= hasta).sort(ordenFecha);\nconst totalC = periodo.reduce((s, f) => s + centimos(f.total), 0);\nconst dias = Math.round((aMs(hasta) - aMs(desde)) / DIA) + 1;\nconst antHasta = aFecha(aMs(desde) - DIA);\nconst antDesde = aFecha(aMs(desde) - dias * DIA);\nconst antC = validas.filter((f) => f.fecha_emision >= antDesde && f.fecha_emision <= antHasta).reduce((s, f) => s + centimos(f.total), 0);\nconst rec = calcularRecurrentes(periodo);\n\n// Última ejecución del asesor (puede no haber)\nlet recs = null;\n// Con cliente_id, la última recomendación de ese cliente; sin él, la última de cualquiera (igual que GET /recomendaciones).\nconst filaRec = $('Leer última recomendación').all().map((i) => i.json)\n  .filter((f) => f && f.id !== undefined && f.id !== null && (p.cliente_id === null || p.cliente_id === undefined || f.cliente_id === p.cliente_id))\n  .sort((a, b) => b.id - a.id)[0];\nif (filaRec) { try { recs = JSON.parse(filaRec.json); } catch (e) { recs = null; } }\n\n// ---- Estilos ----\nconst COLOR_CAB = 'FF0F4C5C';\nconst COLOR_ALT = 'FFEEF5F7';\nconst COLOR_TOT = 'FFD9E7EB';\nconst EUR = '#,##0.00 \"€\"';\nconst FECHA = 'dd/mm/yyyy';\nconst PCT = '0.00%';\nconst BORDE = { style: 'thin', color: { argb: 'FFB7C9CF' } };\nconst BORDES = { top: BORDE, left: BORDE, bottom: BORDE, right: BORDE };\nconst estiloCabecera = (cell) => {\n  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_CAB } };\n  cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };\n  cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };\n  cell.border = BORDES;\n};\nconst estiloFila = (ws, fila, desdeCol, hastaCol, alterna) => {\n  for (let c = desdeCol; c <= hastaCol; c += 1) {\n    const cell = ws.getRow(fila).getCell(c);\n    cell.border = BORDES;\n    if (alterna) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_ALT } };\n  }\n};\nconst estiloTotal = (ws, fila, desdeCol, hastaCol) => {\n  for (let c = desdeCol; c <= hastaCol; c += 1) {\n    const cell = ws.getRow(fila).getCell(c);\n    cell.border = { ...BORDES, top: { style: 'medium', color: { argb: COLOR_CAB } } };\n    cell.font = { bold: true };\n    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOT } };\n  }\n};\nconst colLetra = (n) => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };\n// Ancho = max(contenido mostrado + 2, 12, cabecera + 6), entre min y max (columnas con filtro: la flecha tapaba «Moneda»). La cabecera (negrita, centrada) cuenta\n// un 10 % más y los 4 caracteres extra dejan sitio a la flecha del autofiltro/Tabla. Las filas de `omitir` (títulos combinados) no cuentan.\nconst ajustarAnchos = (ws, min = 8, max = 60, filasCab = [1], omitir = []) => {\n  ws.columns.forEach((col) => {\n    let ancho = min;\n    col.eachCell({ includeEmpty: false }, (cell, fila) => {\n      if (omitir.includes(fila)) return;\n      if (filasCab.includes(fila)) {\n        const t = cell.numFmt === 'mmm yyyy' ? 'ene 2026' : String(cell.value ?? '');\n        ancho = Math.max(ancho, 12, t.length + 6, Math.ceil(t.length * 1.1) + 4);\n        return;\n      }\n      const v = cell.value;\n      let t;\n      if (cell.numFmt === FECHA || cell.numFmt === 'mmm yyyy') t = '00/00/0000';\n      else if (v && typeof v === 'object' && 'formula' in v) t = typeof v.result === 'number' ? v.result.toFixed(2) + ' €    ' : String(v.result ?? '');\n      else if (typeof v === 'number') t = v.toFixed(2) + ' €  ';\n      else t = String(v ?? '');\n      const largo = Math.max(...t.split('\\n').map((x) => x.length));\n      if (!(cell.alignment && cell.alignment.wrapText && largo > max)) ancho = Math.max(ancho, largo + 2);\n    });\n    col.width = Math.min(max, ancho);\n  });\n};\n// Impresión: A4 horizontal, 1 página de ancho (alto libre), márgenes estrechos, títulos repetidos y\n// área de impresión = rango usado. ExcelJS antepone '$' a cada extremo, así que se le pasa «A$1:Q$16»\n// para que el nombre definido quede absoluto ($A$1:$Q$16).\nconst configurarImpresion = (ws, filasTitulo = '1:1') => {\n  const ps = ws.pageSetup;\n  ps.paperSize = 9;\n  ps.orientation = 'landscape';\n  ps.fitToPage = true;\n  ps.fitToWidth = 1;\n  ps.fitToHeight = 0;\n  ps.margins = { left: 0.25, right: 0.25, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };\n  ps.printTitlesRow = filasTitulo;\n  ps.printArea = `A$1:${colLetra(Math.max(1, ws.columnCount))}$${Math.max(1, ws.rowCount)}`;\n};\n\nconst wb = new ExcelJS.Workbook();\nwb.creator = 'FACT — Exportar Excel';\nwb.calcProperties = { fullCalcOnLoad: true };\nconst wsRes = wb.addWorksheet('Resumen', { properties: { tabColor: { argb: COLOR_CAB } } });\nconst wsFac = wb.addWorksheet('Facturas');\nconst wsMes = wb.addWorksheet('Por mes');\nconst wsSus = wb.addWorksheet('Suscripciones y contratos');\nconst wsRec = wb.addWorksheet('Recomendaciones');\nconst wsLib = wb.addWorksheet('Libro registro');\nconst wsIva = wb.addWorksheet('IVA trimestre');\nconst wsRet = wb.addWorksheet('Retenciones');\nconst ws347 = wb.addWorksheet('347');\nconst wsAsi = wb.addWorksheet('Asientos');\nconst wsPen = wb.addWorksheet('Pendientes de pago');\n\n// ================= Hoja Facturas (Tabla de Excel con filtros y fila de totales) =================\nconst COLS = [\n  { name: 'Fecha emisión', k: (f) => aSerial(f.fecha_emision), fmt: FECHA },\n  { name: 'Vencimiento', k: (f) => aSerial(f.fecha_vencimiento), fmt: FECHA },\n  { name: 'Proveedor', k: (f) => f.proveedor || null },\n  { name: 'NIF', k: (f) => f.nif || null },\n  { name: 'Nº factura', k: (f) => f.numero || null },\n  { name: 'Categoría', k: (f) => f.categoria || 'Otros' },\n  { name: 'Subcategoría', k: (f) => f.subcategoria || null },\n  { name: 'Tipo', k: (f) => txtTipo(f.tipo_gasto) },\n  { name: 'Periodicidad', k: (f) => mayuscula(f.periodicidad) },\n  { name: 'Base', k: (f) => (typeof f.base === 'number' ? f.base : null), fmt: EUR, total: true },\n  { name: 'IVA %', k: (f) => (typeof f.iva_tipo === 'number' ? f.iva_tipo : null) },\n  { name: 'Cuota IVA', k: (f) => (typeof f.iva_cuota === 'number' ? f.iva_cuota : null), fmt: EUR, total: true },\n  { name: 'Total', k: (f) => eur(centimos(f.total)), fmt: EUR, total: true },\n  { name: 'Moneda', k: (f) => f.moneda || null },\n  { name: 'Método de pago', k: (f) => mayuscula(f.metodo_pago) },\n  { name: 'Estado', k: (f) => txtEstado(f.estado) },\n  { name: 'Confianza', k: (f) => (typeof f.confianza === 'number' ? f.confianza : null), fmt: '0.00' },\n  // Modo gestoría (tanda B): importes en EUR\n  { name: 'Cliente', k: (f) => nombreCliente(f.cliente_id) },\n  { name: 'Tipo factura', k: (f) => FX_TXT_TIPO[f.tipo_factura] || mayuscula(f.tipo_factura) },\n  { name: 'Operación', k: (f) => FX_TXT_OPERACION[f.operacion] || mayuscula(f.operacion) },\n  { name: 'Retención', k: (f) => (typeof f.irpf_cuota === 'number' ? f.irpf_cuota : null), fmt: EUR, total: true },\n  { name: 'Total a pagar', k: (f) => (typeof f.total_a_pagar === 'number' ? f.total_a_pagar : null), fmt: EUR, total: true },\n  { name: 'Deducible', k: (f) => TXT_DEDUCIBLE[f.deducible] || mayuscula(f.deducible) },\n  { name: 'Cuenta', k: (f) => f.cuenta_gasto || null },\n  { name: 'Estado de pago', k: (f) => (f.estado_pago === 'pagada' ? 'Pagada' : f.estado_pago ? 'Pendiente' : null) },\n];\nconst filasFac = periodo.length ? periodo.map((f) => COLS.map((c) => c.k(f))) : [COLS.map((c, i) => (i === 2 ? '(sin facturas en el periodo)' : null))];\nconst nFac = filasFac.length;\nconst F1 = 2;\nconst FN = nFac + 1; // última fila de datos\nconst sumaCol = (i) => Math.round(periodo.reduce((s, f) => s + Math.round((COLS[i].k(f) || 0) * 100), 0)) / 100;\nwsFac.addTable({\n  name: 'TablaFacturas',\n  ref: 'A1',\n  headerRow: true,\n  totalsRow: true,\n  style: { theme: 'TableStyleLight1', showRowStripes: false },\n  columns: COLS.map((c, i) => (i === 0 ? { name: c.name, filterButton: true, totalsRowLabel: 'Total' }\n    : c.total ? { name: c.name, filterButton: true, totalsRowFunction: 'sum', totalsRowResult: sumaCol(i) }\n      : { name: c.name, filterButton: true })),\n  rows: filasFac,\n});\nCOLS.forEach((c, i) => {\n  estiloCabecera(wsFac.getRow(1).getCell(i + 1));\n  if (c.fmt) for (let r = F1; r <= FN + 1; r += 1) wsFac.getRow(r).getCell(i + 1).numFmt = c.fmt;\n});\nfor (let r = F1; r <= FN; r += 1) estiloFila(wsFac, r, 1, COLS.length, (r - F1) % 2 === 1);\nestiloTotal(wsFac, FN + 1, 1, COLS.length);\nwsFac.views = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activeCell: 'A2' }];\najustarAnchos(wsFac, 10, 45);\nconfigurarImpresion(wsFac);\nconst rango = (col) => `Facturas!$${col}$${F1}:$${col}$${FN}`;\nconst R_FECHA = rango('A');\nconst R_CAT = rango('F');\nconst R_TOTAL = rango('M');\n\n// ================= Hoja Suscripciones y contratos =================\nconst susCab = ['Proveedor', 'Categoría', 'Tipo', 'Periodicidad', 'Última factura', 'Último importe', 'Periodos/año', 'Coste mensual', 'Coste anual'];\nponerFila(wsSus, 1, susCab);\nsusCab.forEach((_, i) => estiloCabecera(wsSus.getRow(1).getCell(i + 1)));\nconst susItems = [...rec.items].sort((a, b) => (b.mensualC ?? -1) - (a.mensualC ?? -1) || String(a.factura.proveedor).localeCompare(String(b.factura.proveedor)));\nsusItems.forEach((it, idx) => {\n  const r = idx + 2;\n  const f = it.factura;\n  ponerFila(wsSus, r, [f.proveedor, f.categoria, txtTipo(f.tipo_gasto), mayuscula(f.periodicidad), aSerial(f.fecha_emision), eur(it.importeC), it.veces]);\n  if (it.veces) {\n    wsSus.getCell(`H${r}`).value = { formula: `ROUND(F${r}*G${r}/12,2)`, result: eur(it.mensualC) };\n    wsSus.getCell(`I${r}`).value = { formula: `F${r}*G${r}`, result: eur(it.anualC) };\n  }\n  estiloFila(wsSus, r, 1, 9, idx % 2 === 1);\n  wsSus.getCell(`E${r}`).numFmt = FECHA;\n  ['F', 'H', 'I'].forEach((c) => { wsSus.getCell(`${c}${r}`).numFmt = EUR; });\n});\nconst sN = susItems.length + 1; // última fila de datos (1 si no hay)\nconst sTot = sN + 1;\nwsSus.getCell(`A${sTot}`).value = 'Total';\nwsSus.getCell(`H${sTot}`).value = { formula: susItems.length ? `SUM(H2:H${sN})` : '0', result: eur(rec.mensualC) };\nwsSus.getCell(`I${sTot}`).value = { formula: susItems.length ? `SUM(I2:I${sN})` : '0', result: eur(rec.anualC) };\nestiloTotal(wsSus, sTot, 1, 9);\n['H', 'I'].forEach((c) => { wsSus.getCell(`${c}${sTot}`).numFmt = EUR; });\nif (susItems.length) {\n  wsSus.autoFilter = `A1:I${sN}`;\n  wsSus.addConditionalFormatting({ ref: `I2:I${sN}`, rules: [{ type: 'dataBar', priority: 1, cfvo: [{ type: 'min' }, { type: 'max' }], color: { argb: 'FF2A9D8F' }, gradient: true }] });\n}\nwsSus.views = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activeCell: 'A2' }];\najustarAnchos(wsSus, 10, 45);\nconfigurarImpresion(wsSus);\n\n// ================= Hoja Por mes (categoría × mes con SUMIFS) =================\nconst meses = [];\nfor (let k = desde.slice(0, 7); ; ) {\n  meses.push(k);\n  if (k >= hasta.slice(0, 7)) break;\n  let y = Number(k.slice(0, 4));\n  let m = Number(k.slice(5, 7)) + 1;\n  if (m > 12) { m = 1; y += 1; }\n  k = y + '-' + String(m).padStart(2, '0');\n}\nconst porCatMes = {};\nfor (const f of periodo) {\n  const c = f.categoria || 'Otros';\n  porCatMes[c] = porCatMes[c] || { total: 0 };\n  porCatMes[c][f.fecha_emision.slice(0, 7)] = (porCatMes[c][f.fecha_emision.slice(0, 7)] || 0) + centimos(f.total);\n  porCatMes[c].total += centimos(f.total);\n}\nconst categorias = Object.keys(porCatMes).sort((a, b) => porCatMes[b].total - porCatMes[a].total || a.localeCompare(b));\nconst nM = meses.length;\nconst cTot = nM + 2; // columna del total por fila\nconst L = (n) => colLetra(n);\nwsMes.getRow(1).getCell(1).value = 'Categoría';\nmeses.forEach((k, i) => { const cell = wsMes.getRow(1).getCell(i + 2); cell.value = Date.UTC(Number(k.slice(0, 4)), Number(k.slice(5, 7)) - 1, 1) / DIA + 25569; cell.numFmt = 'mmm yyyy'; });\nwsMes.getRow(1).getCell(cTot).value = 'Total';\nfor (let c = 1; c <= cTot; c += 1) estiloCabecera(wsMes.getRow(1).getCell(c));\ncategorias.forEach((cat, idx) => {\n  const r = idx + 2;\n  wsMes.getRow(r).getCell(1).value = cat;\n  meses.forEach((k, i) => {\n    const col = L(i + 2);\n    wsMes.getRow(r).getCell(i + 2).value = {\n      formula: `SUMIFS(${R_TOTAL},${R_CAT},$A${r},${R_FECHA},\">=\"&${col}$1,${R_FECHA},\"<=\"&EOMONTH(${col}$1,0))`,\n      result: eur(porCatMes[cat][k] || 0),\n    };\n  });\n  wsMes.getRow(r).getCell(cTot).value = { formula: `SUM(B${r}:${L(nM + 1)}${r})`, result: eur(porCatMes[cat].total) };\n  estiloFila(wsMes, r, 1, cTot, idx % 2 === 1);\n  for (let c = 2; c <= cTot; c += 1) wsMes.getRow(r).getCell(c).numFmt = EUR;\n});\nconst mN = categorias.length + 1;\nconst mTot = mN + 1;\nwsMes.getRow(mTot).getCell(1).value = 'Total';\nfor (let c = 2; c <= cTot; c += 1) {\n  const res = c === cTot ? totalC : periodo.filter((f) => f.fecha_emision.slice(0, 7) === meses[c - 2]).reduce((s, f) => s + centimos(f.total), 0);\n  wsMes.getRow(mTot).getCell(c).value = { formula: categorias.length ? `SUM(${L(c)}2:${L(c)}${mN})` : '0', result: eur(res) };\n  wsMes.getRow(mTot).getCell(c).numFmt = EUR;\n}\nestiloTotal(wsMes, mTot, 1, cTot);\nif (categorias.length) {\n  wsMes.autoFilter = `A1:${L(cTot)}${mN}`;\n  wsMes.addConditionalFormatting({ ref: `B2:${L(nM + 1)}${mN}`, rules: [{ type: 'colorScale', priority: 1, cfvo: [{ type: 'min' }, { type: 'percentile', value: 50 }, { type: 'max' }], color: [{ argb: 'FFFFFFFF' }, { argb: 'FFFFE699' }, { argb: 'FFF4A261' }] }] });\n}\nwsMes.views = [{ state: 'frozen', xSplit: 1, ySplit: 1, topLeftCell: 'B2', activeCell: 'B2' }];\najustarAnchos(wsMes, 12, 45);\nconfigurarImpresion(wsMes);\n\n// ================= Hoja Recomendaciones =================\nconst recCab = ['Título', 'Texto', 'Dato', 'Ahorro mensual', 'Ahorro anual'];\nponerFila(wsRec, 1, recCab);\nrecCab.forEach((_, i) => estiloCabecera(wsRec.getRow(1).getCell(i + 1)));\nconst lista = recs && Array.isArray(recs.recomendaciones) ? recs.recomendaciones : [];\nlista.forEach((x, idx) => {\n  const r = idx + 2;\n  ponerFila(wsRec, r, [x.titulo, x.texto, x.dato, Number(x.ahorro_mensual) || 0, Number(x.ahorro_anual) || 0]);\n  estiloFila(wsRec, r, 1, 5, idx % 2 === 1);\n  ['A', 'B', 'C'].forEach((c) => { wsRec.getCell(`${c}${r}`).alignment = { wrapText: true, vertical: 'top' }; });\n  ['D', 'E'].forEach((c) => { wsRec.getCell(`${c}${r}`).numFmt = EUR; wsRec.getCell(`${c}${r}`).alignment = { vertical: 'top' }; });\n});\nconst rN = lista.length + 1;\nconst rTot = rN + 1;\nconst sumaAh = (k) => eur(lista.reduce((s, x) => s + Math.round((Number(x[k]) || 0) * 100), 0));\nwsRec.getCell(`A${rTot}`).value = 'Total ahorro potencial';\nwsRec.getCell(`D${rTot}`).value = { formula: lista.length ? `SUM(D2:D${rN})` : '0', result: sumaAh('ahorro_mensual') };\nwsRec.getCell(`E${rTot}`).value = { formula: lista.length ? `SUM(E2:E${rN})` : '0', result: sumaAh('ahorro_anual') };\n['D', 'E'].forEach((c) => { wsRec.getCell(`${c}${rTot}`).numFmt = EUR; });\nestiloTotal(wsRec, rTot, 1, 5);\nwsRec.getCell(`A${rTot + 2}`).value = recs\n  ? `Última ejecución del asesor: ${String(recs.generado || '').slice(0, 16).replace('T', ' ')} (periodo ${fmtFecha(recs.desde)} – ${fmtFecha(recs.hasta)}). Las cifras salen de cálculos propios; el texto lo redacta Gemini o una plantilla.`\n  : 'Todavía no hay recomendaciones guardadas: lanza POST /asesor.';\nwsRec.getCell(`A${rTot + 2}`).font = { italic: true, color: { argb: 'FF555555' } };\nwsRec.autoFilter = `A1:E${rN}`;\nwsRec.views = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activeCell: 'A2' }];\n[42, 70, 70, 16, 16].forEach((w, i) => { wsRec.getColumn(i + 1).width = Math.max(w, 12, String(recCab[i]).length + 6); });\nconfigurarImpresion(wsRec);\n\n// ================= Hoja Resumen =================\nwsRes.mergeCells('A1:D1');\nwsRes.getCell('A1').value = 'Resumen de gastos';\nwsRes.getCell('A1').font = { bold: true, size: 16, color: { argb: COLOR_CAB } };\nwsRes.mergeCells('A2:D2');\nwsRes.getCell('A2').value = `Periodo: ${fmtFecha(desde)} – ${fmtFecha(hasta)} · generado el ${fmtFecha(hoy)}. Excluye facturas borradas y duplicadas.`;\nwsRes.getCell('A2').font = { italic: true, color: { argb: 'FF555555' } };\nponerFila(wsRes, 4, ['Indicador', 'Valor']);\n['A4', 'B4'].forEach((a) => estiloCabecera(wsRes.getCell(a)));\nconst kpis = [\n  ['Total gastado', { formula: `SUM(${R_TOTAL})`, result: eur(totalC) }, EUR],\n  ['Nº de facturas', { formula: `COUNT(${R_FECHA})`, result: periodo.length }, '0'],\n  ['Recurrente mensual', { formula: `'Suscripciones y contratos'!H${sTot}`, result: eur(rec.mensualC) }, EUR],\n  ['Recurrente anual', { formula: `'Suscripciones y contratos'!I${sTot}`, result: eur(rec.anualC) }, EUR],\n  [`Periodo anterior (${fmtFecha(antDesde)} – ${fmtFecha(antHasta)})`, eur(antC), EUR],\n  ['Diferencia con el periodo anterior', { formula: 'B5-B9', result: eur(totalC - antC) }, EUR],\n  ['Variación con el periodo anterior', { formula: 'IF(B9=0,\"\",B10/B9)', result: antC ? (totalC - antC) / antC : '' }, PCT],\n];\nkpis.forEach(([k, v, fmt], i) => {\n  const r = 5 + i;\n  wsRes.getCell(`A${r}`).value = k;\n  wsRes.getCell(`B${r}`).value = v;\n  wsRes.getCell(`B${r}`).numFmt = fmt;\n  estiloFila(wsRes, r, 1, 2, i % 2 === 1);\n});\nconst CAB_CAT = 13;\nponerFila(wsRes, CAB_CAT, ['Categoría', 'Importe', 'Nº facturas', '% del total']);\n['A', 'B', 'C', 'D'].forEach((c) => estiloCabecera(wsRes.getCell(`${c}${CAB_CAT}`)));\nconst totCat = CAB_CAT + categorias.length + 1;\ncategorias.forEach((cat, idx) => {\n  const r = CAB_CAT + 1 + idx;\n  wsRes.getCell(`A${r}`).value = cat;\n  wsRes.getCell(`B${r}`).value = { formula: `SUMIFS(${R_TOTAL},${R_CAT},A${r})`, result: eur(porCatMes[cat].total) };\n  wsRes.getCell(`C${r}`).value = { formula: `COUNTIFS(${R_CAT},A${r})`, result: periodo.filter((f) => (f.categoria || 'Otros') === cat).length };\n  wsRes.getCell(`D${r}`).value = { formula: `IF($B$${totCat}=0,0,B${r}/$B$${totCat})`, result: totalC ? porCatMes[cat].total / totalC : 0 };\n  wsRes.getCell(`B${r}`).numFmt = EUR;\n  wsRes.getCell(`D${r}`).numFmt = PCT;\n  estiloFila(wsRes, r, 1, 4, idx % 2 === 1);\n});\nconst ultCat = CAB_CAT + categorias.length;\nwsRes.getCell(`A${totCat}`).value = 'Total';\nwsRes.getCell(`B${totCat}`).value = { formula: categorias.length ? `SUM(B${CAB_CAT + 1}:B${ultCat})` : '0', result: eur(totalC) };\nwsRes.getCell(`C${totCat}`).value = { formula: categorias.length ? `SUM(C${CAB_CAT + 1}:C${ultCat})` : '0', result: periodo.length };\nwsRes.getCell(`D${totCat}`).value = { formula: categorias.length ? `SUM(D${CAB_CAT + 1}:D${ultCat})` : '0', result: totalC ? 1 : 0 };\nwsRes.getCell(`B${totCat}`).numFmt = EUR;\nwsRes.getCell(`D${totCat}`).numFmt = PCT;\nestiloTotal(wsRes, totCat, 1, 4);\nif (categorias.length) {\n  wsRes.autoFilter = `A${CAB_CAT}:D${ultCat}`;\n  wsRes.addConditionalFormatting({ ref: `B${CAB_CAT + 1}:B${ultCat}`, rules: [{ type: 'dataBar', priority: 1, cfvo: [{ type: 'min' }, { type: 'max' }], color: { argb: 'FF2A9D8F' }, gradient: true }] });\n}\nwsRes.views = [{ state: 'frozen', ySplit: 2, xSplit: 0, topLeftCell: 'A3', activeCell: 'A3' }];\najustarAnchos(wsRes, 12, 60, [4, CAB_CAT], [1, 2]);\nwsRes.getColumn(1).width = Math.max(wsRes.getColumn(1).width, 46);\nconfigurarImpresion(wsRes, '1:2');\n\n// ================= Modo gestoría (tanda B): hojas fiscales =================\n// Datos: facturas ok/revisar/posible_duplicada del periodo (y del cliente si se pide), en EUR con el bloque COMÚN\n// Fiscal. Las facturas en otra moneda sin tipo de cambio no entran (igual que en /fiscal).\nconst fxValidas = crudas.filter((f) => FX_VALIDOS.includes(f.estado) && fxFecha(f.fecha_emision));\nconst fxPrep = fxValidas.filter((f) => f.fecha_emision >= desde && f.fecha_emision <= hasta).map((f) => fxPreparar(f, clientesPorId[f.cliente_id]))\n  .filter((x) => !x.sinCambio);\nconst cabeceraHoja = (ws, fila, textos) => { textos.forEach((t, i) => { const c = ws.getRow(fila).getCell(i + 1); c.value = t; estiloCabecera(c); }); };\nconst fechaCelda = (ws, ref, s) => { const v = aSerial(s); if (v !== null) { ws.getCell(ref).value = v; ws.getCell(ref).numFmt = FECHA; } };\n\n// ---- Libro registro (una fila por tipo de IVA) ----\nconst LR_CAB = ['Nº recepción', 'Fecha expedición', 'Fecha operación', 'Número', 'NIF', 'Nombre', 'Tipo de factura', 'Operación', 'Base imponible', 'Tipo IVA',\n  'Cuota IVA', 'Tipo recargo', 'Cuota recargo', 'Cuota autorrepercutida', 'Cuota deducible', 'Total', 'Cliente'];\ncabeceraHoja(wsLib, 1, LR_CAB);\nconst lrFilas = fxFilasLibro(fxPrep).sort((a, b) => String(nombreCliente(a.cliente_id) || '').localeCompare(String(nombreCliente(b.cliente_id) || ''))\n  || (a.fecha_expedicion < b.fecha_expedicion ? -1 : a.fecha_expedicion > b.fecha_expedicion ? 1 : String(a.num_recepcion || '').localeCompare(String(b.num_recepcion || '')) || a.id - b.id));\nlrFilas.forEach((f, i) => {\n  const r = i + 2;\n  ponerFila(wsLib, r, [f.num_recepcion, null, null, f.numero, f.nif, f.nombre, FX_TXT_TIPO[f.tipo_factura] || f.tipo_factura, FX_TXT_OPERACION[f.operacion] || f.operacion,\n    fxEuros(f.baseC), f.tipo_iva, fxEuros(f.cuotaC), f.tipo_re, fxEuros(f.reC), fxEuros(f.autoC), fxEuros(f.dedC), fxEuros(f.totalC), nombreCliente(f.cliente_id)]);\n  fechaCelda(wsLib, `B${r}`, f.fecha_expedicion);\n  fechaCelda(wsLib, `C${r}`, f.fecha_operacion);\n  ['I', 'K', 'M', 'N', 'O', 'P'].forEach((c) => { wsLib.getCell(`${c}${r}`).numFmt = EUR; });\n  estiloFila(wsLib, r, 1, LR_CAB.length, i % 2 === 1);\n});\nconst lrN = lrFilas.length + 1;\nconst lrTot = lrN + 1;\nwsLib.getCell(`A${lrTot}`).value = 'Total';\n['I', 'K', 'M', 'N', 'O', 'P'].forEach((c) => {\n  const campo = { I: 'baseC', K: 'cuotaC', M: 'reC', N: 'autoC', O: 'dedC', P: 'totalC' }[c];\n  wsLib.getCell(`${c}${lrTot}`).value = { formula: lrFilas.length ? `SUM(${c}2:${c}${lrN})` : '0', result: fxEuros(lrFilas.reduce((s, f) => s + f[campo], 0)) };\n  wsLib.getCell(`${c}${lrTot}`).numFmt = EUR;\n});\nestiloTotal(wsLib, lrTot, 1, LR_CAB.length);\nwsLib.autoFilter = `A1:${colLetra(LR_CAB.length)}${lrN}`;\nwsLib.views = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activeCell: 'A2' }];\najustarAnchos(wsLib, 10, 45);\nconfigurarImpresion(wsLib);\nconst LR = (col) => `'Libro registro'!$${col}$2:$${col}$${Math.max(2, lrN)}`;\n\n// ---- IVA trimestre (303 por tipo con SUMIFS sobre «Libro registro») ----\nconst trimestres = [];\nfor (let y = Number(desde.slice(0, 4)), t = fxTrimestreDe(desde); ; ) {\n  trimestres.push({ anio: y, t, ...fxPeriodo(y, t) });\n  if (y > Number(hasta.slice(0, 4)) || (y === Number(hasta.slice(0, 4)) && t >= fxTrimestreDe(hasta))) break;\n  t += 1; if (t > 4) { t = 1; y += 1; }\n}\nconst IVA_CAB = ['Concepto', 'Tipo', 'Base', 'Cuota', 'Cuota deducible', 'Casillas 303 (referencia)'];\ncabeceraHoja(wsIva, 1, IVA_CAB);\nlet ri = 2;\nconst enTrim = (q) => lrFilas.filter((f) => f.fecha_expedicion >= q.desde && f.fecha_expedicion <= q.hasta);\nconst sumC = (xs, k) => fxEuros(xs.reduce((s, f) => s + f[k], 0));\nconst crit = (ri0) => `${LR('B')},\">=\"&$B$${ri0},${LR('B')},\"<=\"&$C$${ri0}`;\nfor (const q of trimestres) {\n  const xs = enTrim(q);\n  const filaT = ri;\n  wsIva.getCell(`A${ri}`).value = `${q.t}T ${q.anio}`;\n  wsIva.getCell(`A${ri}`).font = { bold: true, color: { argb: COLOR_CAB } };\n  fechaCelda(wsIva, `B${ri}`, q.desde);\n  fechaCelda(wsIva, `C${ri}`, q.hasta);\n  wsIva.getCell(`D${ri}`).value = 'desde / hasta (fecha de expedición)';\n  wsIva.getCell(`D${ri}`).font = { italic: true, color: { argb: 'FF555555' } };\n  ri += 1;\n  const primera = ri;\n  const tipos = [...new Set(xs.filter((f) => f.operacion === 'interior' && f.tipo_iva > 0).map((f) => f.tipo_iva))].sort((a, b) => b - a);\n  const filaSum = (concepto, tipo, cols, casillas, alterna) => {\n    wsIva.getCell(`A${ri}`).value = concepto;\n    if (tipo !== null) wsIva.getCell(`B${ri}`).value = tipo;\n    ['C', 'D', 'E'].forEach((c, i) => { wsIva.getCell(`${c}${ri}`).value = cols[i]; wsIva.getCell(`${c}${ri}`).numFmt = EUR; });\n    wsIva.getCell(`F${ri}`).value = casillas;\n    estiloFila(wsIva, ri, 1, IVA_CAB.length, alterna);\n    ri += 1;\n  };\n  let n = 0;\n  for (const tipo of tipos) {\n    const ys = xs.filter((f) => f.operacion === 'interior' && f.tipo_iva === tipo);\n    const c = (col, k) => ({ formula: `SUMIFS(${LR(col)},${crit(filaT)},${LR('J')},$B${ri},${LR('H')},\"Interior\")`, result: sumC(ys, k) });\n    filaSum(`IVA soportado interior ${String(tipo).replace('.', ',')} %`, tipo, [c('I', 'baseC'), c('K', 'cuotaC'), c('O', 'dedC')], '28-29', n++ % 2 === 1);\n  }\n  const op = (nombres, col, k) => {\n    const ys = xs.filter((f) => nombres.includes(f.operacion));\n    return { formula: nombres.map((o) => `SUMIFS(${LR(col)},${crit(filaT)},${LR('H')},\"${FX_TXT_OPERACION[o]}\")`).join('+'), result: sumC(ys, k) };\n  };\n  filaSum('Adquisiciones intracomunitarias (autorrepercusión)', null, [op(['intracomunitaria'], 'I', 'baseC'), op(['intracomunitaria'], 'N', 'autoC'), op(['intracomunitaria'], 'O', 'dedC')], '10-11 / 36-37', n++ % 2 === 1);\n  filaSum('Inversión del sujeto pasivo (ISP y servicios extracomunitarios)', null, [op(['isp_nacional', 'extracomunitaria'], 'I', 'baseC'), op(['isp_nacional', 'extracomunitaria'], 'N', 'autoC'), op(['isp_nacional', 'extracomunitaria'], 'O', 'dedC')], '12-13 / 28-29', n++ % 2 === 1);\n  const ultima = ri - 1;\n  wsIva.getCell(`A${ri}`).value = `Total deducible ${q.t}T ${q.anio}`;\n  wsIva.getCell(`E${ri}`).value = { formula: `SUM(E${primera}:E${ultima})`, result: sumC(xs.filter((f) => f.operacion === 'interior' ? f.tipo_iva > 0 : ['intracomunitaria', 'isp_nacional', 'extracomunitaria'].includes(f.operacion)), 'dedC') };\n  wsIva.getCell(`E${ri}`).numFmt = EUR;\n  estiloTotal(wsIva, ri, 1, IVA_CAB.length);\n  ri += 1;\n  const tiposRe = [...new Set(xs.filter((f) => f.reC !== 0).map((f) => f.tipo_re))].sort((a, b) => b - a);\n  for (const tre of tiposRe) {\n    const ys = xs.filter((f) => f.reC !== 0 && f.tipo_re === tre);\n    wsIva.getCell(`A${ri}`).value = `Recargo de equivalencia ${String(tre).replace('.', ',')} % (informativo, no deducible)`;\n    wsIva.getCell(`B${ri}`).value = tre;\n    wsIva.getCell(`C${ri}`).value = { formula: `SUMIFS(${LR('I')},${crit(filaT)},${LR('L')},$B${ri})`, result: sumC(ys, 'baseC') };\n    wsIva.getCell(`D${ri}`).value = { formula: `SUMIFS(${LR('M')},${crit(filaT)},${LR('L')},$B${ri})`, result: sumC(ys, 'reC') };\n    ['C', 'D'].forEach((c) => { wsIva.getCell(`${c}${ri}`).numFmt = EUR; });\n    wsIva.getCell(`A${ri}`).font = { italic: true };\n    ri += 1;\n  }\n  ri += 1;\n}\nwsIva.getCell(`A${ri}`).value = (p.cliente_id === null || p.cliente_id === undefined)\n  ? 'Libro con todos los clientes: el 303 es por cliente; exporta con cliente_id para presentar. Casillas solo de referencia (para revisar).'\n  : 'Casillas del modelo 303 solo de referencia (para revisar): el contable presenta con su programa.';\nwsIva.getCell(`A${ri}`).font = { italic: true, color: { argb: 'FF555555' } };\nwsIva.autoFilter = 'A1:F1';\nwsIva.views = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activeCell: 'A2' }];\najustarAnchos(wsIva, 12, 60, [1], [ri]);\nconfigurarImpresion(wsIva);\n\n// ---- Retenciones (111 profesionales / 115 alquileres) ----\nconst RET_CAB = ['Fecha', 'Proveedor', 'NIF', 'Nº factura', 'Modelo', 'Base', 'Tipo %', 'Retención', 'Cliente'];\ncabeceraHoja(wsRet, 1, RET_CAB);\nconst retFilas = fxPrep.filter((x) => x.irpfC !== 0).sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.id - b.id));\nretFilas.forEach((x, i) => {\n  const r = i + 2;\n  ponerFila(wsRet, r, [null, x.nombre, x.nif, x.numero, Number(fxModeloRet(x)), fxEuros(x.lineas.reduce((s, l) => s + l.baseC, 0) + x.exentaC), x.irpfTipo, fxEuros(x.irpfC), nombreCliente(x.cliente_id)]);\n  fechaCelda(wsRet, `A${r}`, x.fecha);\n  ['F', 'H'].forEach((c) => { wsRet.getCell(`${c}${r}`).numFmt = EUR; });\n  estiloFila(wsRet, r, 1, RET_CAB.length, i % 2 === 1);\n});\nconst rtN = retFilas.length + 1;\nconst rtTot = rtN + 1;\nwsRet.getCell(`A${rtTot}`).value = 'Total';\n['F', 'H'].forEach((c) => {\n  wsRet.getCell(`${c}${rtTot}`).value = { formula: retFilas.length ? `SUM(${c}2:${c}${rtN})` : '0',\n    result: fxEuros(retFilas.reduce((s, x) => s + (c === 'F' ? x.lineas.reduce((a, l) => a + l.baseC, 0) + x.exentaC : x.irpfC), 0)) };\n  wsRet.getCell(`${c}${rtTot}`).numFmt = EUR;\n});\nestiloTotal(wsRet, rtTot, 1, RET_CAB.length);\nconst rtRes = rtTot + 2;\ncabeceraHoja(wsRet, rtRes, ['Trimestre', 'Desde', 'Hasta', 'Modelo', 'Nº perceptores', 'Base', 'Retención']);\nconst RR = (col) => `$${col}$2:$${col}$${Math.max(2, rtN)}`;\nlet rr = rtRes + 1;\nfor (const q of trimestres) {\n  for (const modelo of ['111', '115']) {\n    const ys = retFilas.filter((x) => x.fecha >= q.desde && x.fecha <= q.hasta && fxModeloRet(x) === modelo);\n    wsRet.getCell(`A${rr}`).value = `${q.t}T ${q.anio}`;\n    fechaCelda(wsRet, `B${rr}`, q.desde);\n    fechaCelda(wsRet, `C${rr}`, q.hasta);\n    wsRet.getCell(`D${rr}`).value = Number(modelo);\n    wsRet.getCell(`E${rr}`).value = new Set(ys.map((x) => `${x.cliente_id}|${x.nif || x.nombre}`)).size;\n    const cr = `${RR('A')},\">=\"&$B${rr},${RR('A')},\"<=\"&$C${rr},${RR('E')},$D${rr}`;\n    wsRet.getCell(`F${rr}`).value = { formula: `SUMIFS(${RR('F')},${cr})`, result: fxEuros(ys.reduce((s, x) => s + x.lineas.reduce((a, l) => a + l.baseC, 0) + x.exentaC, 0)) };\n    wsRet.getCell(`G${rr}`).value = { formula: `SUMIFS(${RR('H')},${cr})`, result: fxEuros(ys.reduce((s, x) => s + x.irpfC, 0)) };\n    ['F', 'G'].forEach((c) => { wsRet.getCell(`${c}${rr}`).numFmt = EUR; });\n    estiloFila(wsRet, rr, 1, 7, (rr - rtRes) % 2 === 0);\n    rr += 1;\n  }\n}\nwsRet.autoFilter = `A1:${colLetra(RET_CAB.length)}${rtN}`;\nwsRet.views = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activeCell: 'A2' }];\najustarAnchos(wsRet, 12, 45, [1, rtRes]);\nconfigurarImpresion(wsRet);\n\n// ---- 347 (año de «hasta»; por cliente declarante) ----\nconst anio347 = Number(hasta.slice(0, 4));\nconst C347_CAB = ['NIF', 'Nombre', '1T', '2T', '3T', '4T', 'Total anual', 'Cliente'];\ncabeceraHoja(ws347, 1, C347_CAB);\nconst ids347 = [...new Set(fxValidas.map((f) => f.cliente_id))].filter((id) => id !== null && id !== undefined).sort((a, b) => a - b);\nconst filas347 = [];\nfor (const id of ids347) {\n  const cli = clientesPorId[id];\n  const prepAnio = fxValidas.filter((f) => f.cliente_id === id && f.fecha_emision.slice(0, 4) === String(anio347)).map((f) => fxPreparar(f, cli));\n  for (const g of fxCalcularFiscal(prepAnio, cli, anio347, null).modelo_347_anual) filas347.push({ ...g, cliente: nombreCliente(id) });\n}\nfilas347.forEach((g, i) => {\n  const r = i + 2;\n  ponerFila(ws347, r, [g.nif, g.nombre, ...g.por_trimestre, null, g.cliente]);\n  ws347.getCell(`G${r}`).value = { formula: `SUM(C${r}:F${r})`, result: g.total_anual };\n  ['C', 'D', 'E', 'F', 'G'].forEach((c) => { ws347.getCell(`${c}${r}`).numFmt = EUR; });\n  estiloFila(ws347, r, 1, C347_CAB.length, i % 2 === 1);\n});\nconst n347 = filas347.length + 1;\nws347.getCell(`A${n347 + 1}`).value = 'Total';\n['C', 'D', 'E', 'F', 'G'].forEach((c, k) => {\n  ws347.getCell(`${c}${n347 + 1}`).value = { formula: filas347.length ? `SUM(${c}2:${c}${n347})` : '0',\n    result: fxEuros(filas347.reduce((s, g) => s + fxCent(k < 4 ? g.por_trimestre[k] : g.total_anual), 0)) };\n  ws347.getCell(`${c}${n347 + 1}`).numFmt = EUR;\n});\nestiloTotal(ws347, n347 + 1, 1, C347_CAB.length);\nws347.getCell(`A${n347 + 3}`).value = `Modelo 347 de ${anio347} (año completo): proveedores con más de 3.005,06 € IVA incluido, por NIF, neto de rectificativas; sin operaciones con retención, intracomunitarias ni extranjeras.`;\nws347.getCell(`A${n347 + 3}`).font = { italic: true, color: { argb: 'FF555555' } };\nws347.autoFilter = `A1:H${n347}`;\nws347.views = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activeCell: 'A2' }];\najustarAnchos(ws347, 12, 45, [1], [n347 + 3]);\nconfigurarImpresion(ws347);\n\n// ---- Asientos ----\nconst AS_CAB = ['Asiento', 'Fecha', 'Cuenta', 'Concepto', 'Debe', 'Haber', 'Documento', 'NIF', 'Cliente'];\ncabeceraHoja(wsAsi, 1, AS_CAB);\nconst asi = fxAsientos(fxPrep);\nconst cliAsiento = {};\nfor (const x of fxPrep) cliAsiento[x.id] = nombreCliente(x.cliente_id);\nasi.lineas.forEach((l, i) => {\n  const r = i + 2;\n  ponerFila(wsAsi, r, [l.asiento, null, l.cuenta, l.concepto, fxEuros(l.debeC), fxEuros(l.haberC), l.documento, l.nif, cliAsiento[l.factura_id]]);\n  fechaCelda(wsAsi, `B${r}`, l.fecha);\n  ['E', 'F'].forEach((c) => { wsAsi.getCell(`${c}${r}`).numFmt = EUR; });\n  estiloFila(wsAsi, r, 1, AS_CAB.length, l.asiento % 2 === 0);\n});\nconst asN = asi.lineas.length + 1;\nwsAsi.getCell(`A${asN + 1}`).value = 'Total';\n['E', 'F'].forEach((c) => {\n  wsAsi.getCell(`${c}${asN + 1}`).value = { formula: asi.lineas.length ? `SUM(${c}2:${c}${asN})` : '0', result: fxEuros(asi.lineas.reduce((s, l) => s + (c === 'E' ? l.debeC : l.haberC), 0)) };\n  wsAsi.getCell(`${c}${asN + 1}`).numFmt = EUR;\n});\nestiloTotal(wsAsi, asN + 1, 1, AS_CAB.length);\nif (asi.excluidas.length) {\n  wsAsi.getCell(`A${asN + 3}`).value = `Facturas sin asiento porque sus importes no cuadran: ${asi.excluidas.map((x) => x.id).join(', ')}.`;\n  wsAsi.getCell(`A${asN + 3}`).font = { italic: true, color: { argb: 'FF9C0006' } };\n}\nwsAsi.autoFilter = `A1:I${asN}`;\nwsAsi.views = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activeCell: 'A2' }];\najustarAnchos(wsAsi, 10, 50, [1], [asN + 3]);\nconfigurarImpresion(wsAsi);\n\n// ---- Pendientes de pago (emitidas hasta «hasta», sin pagar; cualquier fecha de emisión) ----\nconst PEN_CAB = ['Proveedor', 'NIF', 'Nº factura', 'Fecha emisión', 'Vencimiento', 'Días vencida', 'Situación', 'Total a pagar', 'Cliente'];\ncabeceraHoja(wsPen, 1, PEN_CAB);\nconst pend = fxValidas.filter((f) => f.fecha_emision <= hasta && f.estado_pago !== 'pagada').map((f) => fxPreparar(f, clientesPorId[f.cliente_id])).filter((x) => !x.sinCambio)\n  .sort((a, b) => String(a.fecha_vencimiento || '9999').localeCompare(String(b.fecha_vencimiento || '9999')) || (a.fecha < b.fecha ? -1 : 1) || a.id - b.id);\npend.forEach((x, i) => {\n  const r = i + 2;\n  const dias = x.fecha_vencimiento && x.fecha_vencimiento < hoy ? Math.round((aMs(hoy) - aMs(x.fecha_vencimiento)) / DIA) : 0;\n  ponerFila(wsPen, r, [x.nombre, x.nif, x.numero, null, null, dias, dias > 0 ? 'Vencida' : 'Pendiente', fxEuros(x.aPagarC), nombreCliente(x.cliente_id)]);\n  fechaCelda(wsPen, `D${r}`, x.fecha);\n  fechaCelda(wsPen, `E${r}`, x.fecha_vencimiento);\n  wsPen.getCell(`H${r}`).numFmt = EUR;\n  estiloFila(wsPen, r, 1, PEN_CAB.length, i % 2 === 1);\n  if (dias > 0) wsPen.getCell(`G${r}`).font = { bold: true, color: { argb: 'FF9C0006' } };\n});\nconst peN = pend.length + 1;\nwsPen.getCell(`A${peN + 1}`).value = 'Total';\nwsPen.getCell(`H${peN + 1}`).value = { formula: pend.length ? `SUM(H2:H${peN})` : '0', result: fxEuros(pend.reduce((s, x) => s + x.aPagarC, 0)) };\nwsPen.getCell(`H${peN + 1}`).numFmt = EUR;\nestiloTotal(wsPen, peN + 1, 1, PEN_CAB.length);\nwsPen.autoFilter = `A1:I${peN}`;\nwsPen.views = [{ state: 'frozen', ySplit: 1, xSplit: 0, topLeftCell: 'A2', activeCell: 'A2' }];\najustarAnchos(wsPen, 12, 45);\nconfigurarImpresion(wsPen);\n\nconst buffer = Buffer.from(await wb.xlsx.writeBuffer());\nconst nombre = `Gastos_${hoy}.xlsx`;\nconst MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';\nconst binario = await this.helpers.prepareBinaryData(buffer, nombre, MIME);\nreturn [{ json: { nombre, mime: MIME, bytes: buffer.length, desde, hasta, num_facturas: periodo.length, total: eur(totalC) }, binary: { data: binario } }];\n"
+        }
+      },
+      {
+        "id": "7b748df0-0eb4-451e-8dda-81ccda7db4a6",
+        "name": "Responder Excel",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          1440,
+          200
+        ],
+        "parameters": {
+          "respondWith": "binary",
+          "responseDataSource": "set",
+          "inputFieldName": "data",
+          "options": {
+            "responseCode": 200,
+            "responseHeaders": {
+              "entries": [
+                {
+                  "name": "Content-Type",
+                  "value": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                },
+                {
+                  "name": "Content-Disposition",
+                  "value": "=attachment; filename=\"{{ $json.nombre }}\""
+                },
+                {
+                  "name": "Access-Control-Expose-Headers",
+                  "value": "Content-Disposition"
+                },
+                {
+                  "name": "Cache-Control",
+                  "value": "no-store"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": "2c5a9f68-5f3b-4ac0-906b-bed515ddc6d1",
+        "name": "Responder error",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          720,
+          420
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json.body) }}",
+          "options": {
+            "responseCode": "={{ $json.status }}"
+          }
+        }
+      },
+      {
+        "id": "1aa96a98-3d87-4aef-adf2-fdd7a0535ec8",
+        "name": "Sticky Note 8031352d",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          0,
+          -120
+        ],
+        "parameters": {
+          "content": "## FACT — Exportar Excel\nGET /exportar?desde&hasta (por defecto últimos 12 meses). Header Auth X-API-Key + CORS; expone Content-Disposition.\n\n- Excluye facturas borradas y duplicadas. Hojas: Resumen, Facturas (Tabla), Por mes, Suscripciones y contratos, Recomendaciones (última de fact_recomendaciones).\n- Resumen, Por mes y Suscripciones usan fórmulas SUMIFS/SUM sobre la hoja Facturas; los resultados calculados en Code van como caché.\n- Bloque COMÚN Recurrentes idéntico al de FACT — API y FACT — Asesor de gastos.",
+          "color": 7,
+          "width": 900,
+          "height": 260
+        }
+      },
+      {
+        "id": "25d7cfe9-183c-478e-800d-bd45abd8975f",
+        "name": "Leer clientes",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1100,
+          500
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "vFk59qcLmkSdGzZg",
+            "cachedResultName": "fact_clientes"
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true,
+        "executeOnce": true
+      }
+    ],
+    "connections": {
+      "GET /exportar": {
+        "main": [
+          [
+            {
+              "node": "Parámetros",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parámetros": {
+        "main": [
+          [
+            {
+              "node": "¿Parámetros válidos?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Parámetros válidos?": {
+        "main": [
+          [
+            {
+              "node": "Leer facturas",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Responder error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer facturas": {
+        "main": [
+          [
+            {
+              "node": "Leer última recomendación",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generar Excel": {
+        "main": [
+          [
+            {
+              "node": "Responder Excel",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer última recomendación": {
+        "main": [
+          [
+            {
+              "node": "Leer clientes",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Leer clientes": {
+        "main": [
+          [
+            {
+              "node": "Generar Excel",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "errorWorkflow": "V08lXHOvWDQal70V",
+      "timezone": "Europe/Madrid"
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "nodeGroups": [
+      {
+        "id": "20dfc0aa-04b5-4eb3-8caf-11d983d9ab66",
+        "name": "Validar parámetros",
+        "nodeIds": [
+          "a4fde21d-18d6-4fdc-8cbe-10dc907954eb",
+          "6435db3b-675c-438d-8c25-e1cac568ad18"
+        ],
+        "description": "desde/hasta AAAA-MM-DD; por defecto últimos 12 meses. Errores 400 en JSON."
+      },
+      {
+        "id": "3c2d3b2a-9725-4894-bbf5-819827f93020",
+        "name": "Generar el Excel",
+        "nodeIds": [
+          "d4bc0e09-ed3c-4304-a16a-ef61c23c9872",
+          "1e61ee6d-f501-4501-ae31-3500ba972025",
+          "25d7cfe9-183c-478e-800d-bd45abd8975f",
+          "936aaa9e-d6ad-48d0-86f3-b08e999287b9"
+        ],
+        "description": "Lee facturas, recomendaciones y clientes y genera el XLSX (resumen, facturas, libro registro, IVA, retenciones, 347, asientos, pendientes)."
+      }
+    ],
+    "pinData": null,
+    "versionId": "78444a8d-d983-41e3-b2d9-537bde054d0f",
+    "activeVersionId": "78444a8d-d983-41e3-b2d9-537bde054d0f",
+    "versionCounter": 8,
+    "triggerCount": 1,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-10-14T18:58:50.398Z",
+        "createdAt": "2026-10-14T18:58:50.398Z",
+        "role": "workflow:owner",
+        "workflowId": "eLB9OcZZ9kjh2gxF",
+        "projectId": "bZtIqKac0YRZrt14",
+        "project": {
+          "updatedAt": "2026-10-08T21:42:10.105Z",
+          "createdAt": "2026-10-08T21:41:04.349Z",
+          "id": "bZtIqKac0YRZrt14",
+          "name": "Jaime Gomez <tu-correo@ejemplo.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "bd591b97-d638-4c8a-9c0b-ccbab2197267"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Retenciones: modelo numérico",
+      "description": "Updated nodes: Generar Excel"
+    }
+  }
+]

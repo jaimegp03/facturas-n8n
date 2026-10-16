@@ -1,0 +1,231 @@
+[
+  {
+    "updatedAt": "2026-10-14T18:18:26.574Z",
+    "createdAt": "2026-10-14T17:28:37.984Z",
+    "id": "V08lXHOvWDQal70V",
+    "name": "FACT — Errores",
+    "description": "Error Trigger: registra workflow, nodo, mensaje recortado e id de ejecución en fact_errores y avisa por Gmail al propio usuario con enlace a la ejecución. Sin contenido de facturas.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "d294771d-c3ea-4616-bc41-2bd458a4ace1",
+        "name": "Al fallar un workflow",
+        "type": "n8n-nodes-base.errorTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          0
+        ],
+        "parameters": {}
+      },
+      {
+        "id": "4fb81acc-146c-47c0-92ed-4e473d86bdf4",
+        "name": "Preparar registro",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          0
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// Solo ids, nodo y mensaje (recortado). Nunca contenido de facturas.\nconst BASE_N8N = 'http://localhost:5678';\nconst e = $input.first().json || {};\nconst ex = e.execution || {};\nconst wf = e.workflow || {};\nconst err = ex.error || (e.trigger && e.trigger.error) || {};\nconst mensaje = String(err.message || 'Error sin mensaje').replace(/\\s+/g, ' ').trim().slice(0, 300);\nconst nodo = ex.lastNodeExecuted || (err.node && err.node.name) || null;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst registro = {\n  fecha: $now.setZone('Europe/Madrid').toISO(),\n  workflow: wf.name || wf.id || 'desconocido',\n  nodo,\n  mensaje,\n  ejecucion_id: ex.id !== undefined && ex.id !== null ? String(ex.id) : null,\n};\nconst enlace = wf.id && registro.ejecucion_id ? `${BASE_N8N}/workflow/${encodeURIComponent(wf.id)}/executions/${encodeURIComponent(registro.ejecucion_id)}` : null;\nconst asunto = `[FACT] Error en ${registro.workflow}`;\nconst html = [\n  `<p><b>Error en ${esc(registro.workflow)}</b></p>`,\n  '<ul>',\n  `<li>Workflow: ${esc(registro.workflow)}${wf.id ? ' (' + esc(wf.id) + ')' : ''}</li>`,\n  `<li>Nodo: ${esc(nodo || '-')}</li>`,\n  `<li>Mensaje: ${esc(mensaje)}</li>`,\n  `<li>Ejecución: ${esc(registro.ejecucion_id || '-')}</li>`,\n  `<li>Fecha: ${esc(registro.fecha)}</li>`,\n  '</ul>',\n  enlace ? `<p><a href=\"${esc(enlace)}\">Abrir la ejecución en n8n</a> (${esc(enlace)})</p>` : '<p>Sin enlace: la ejecución no se guardó.</p>',\n].join('\\n');\nreturn [{ json: { registro, correo: { asunto, html } } }];\n"
+        }
+      },
+      {
+        "id": "30ba2990-849e-45ea-a786-9ad3b449ac3c",
+        "name": "Guardar en fact_errores",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          480,
+          -100
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "insert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "kJz2JABz5M6eCtR2",
+            "cachedResultName": "fact_errores"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "fecha": "={{ $json.registro.fecha }}",
+              "workflow": "={{ $json.registro.workflow }}",
+              "nodo": "={{ $json.registro.nodo }}",
+              "mensaje": "={{ $json.registro.mensaje }}",
+              "ejecucion_id": "={{ $json.registro.ejecucion_id }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "fecha",
+                "displayName": "fecha",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "workflow",
+                "displayName": "workflow",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "nodo",
+                "displayName": "nodo",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "mensaje",
+                "displayName": "mensaje",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "ejecucion_id",
+                "displayName": "ejecucion_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "options": {}
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "159432ba-2a00-4d92-8b14-58fcc4e62bb7",
+        "name": "Sticky Note 805fdda4",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          100,
+          300
+        ],
+        "parameters": {
+          "content": "## FACT — Errores\nRegistra en **fact_errores** solo workflow, nodo, mensaje recortado (300) e id de ejecución (nunca contenido de facturas) y avisa por **Gmail** al propio usuario con asunto `[FACT] Error en <workflow>` y enlace a la ejecución en http://localhost:5678.\n\nEl antiguo nodo Telegram se eliminó (la credencial sigue en el gestor por si se quiere recuperar).",
+          "color": 7
+        }
+      },
+      {
+        "id": "96ea0b12-10f0-4a22-9d88-146b252ef9f4",
+        "name": "Avisar por Gmail",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.2,
+        "position": [
+          480,
+          100
+        ],
+        "parameters": {
+          "resource": "message",
+          "operation": "send",
+          "sendTo": "tu-correo@ejemplo.com",
+          "subject": "={{ $json.correo.asunto }}",
+          "emailType": "html",
+          "message": "={{ $json.correo.html }}",
+          "options": {
+            "appendAttribution": false
+          }
+        },
+        "credentials": {
+          "gmailOAuth2": {
+            "id": "9F7wcxnZfomPPrAa",
+            "name": "Gmail account"
+          }
+        },
+        "webhookId": "e530f4ea-cd95-4162-9295-26f494cfcd61"
+      }
+    ],
+    "connections": {
+      "Al fallar un workflow": {
+        "main": [
+          [
+            {
+              "node": "Preparar registro",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar registro": {
+        "main": [
+          [
+            {
+              "node": "Guardar en fact_errores",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Avisar por Gmail",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "nodeGroups": [],
+    "pinData": null,
+    "versionId": "5e7032c3-a60e-4338-8c91-07feea135401",
+    "activeVersionId": "5e7032c3-a60e-4338-8c91-07feea135401",
+    "versionCounter": 2,
+    "triggerCount": 0,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-10-14T17:28:37.988Z",
+        "createdAt": "2026-10-14T17:28:37.988Z",
+        "role": "workflow:owner",
+        "workflowId": "V08lXHOvWDQal70V",
+        "projectId": "bZtIqKac0YRZrt14",
+        "project": {
+          "updatedAt": "2026-10-08T21:42:10.105Z",
+          "createdAt": "2026-10-08T21:41:04.349Z",
+          "id": "bZtIqKac0YRZrt14",
+          "name": "Jaime Gomez <tu-correo@ejemplo.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "bd591b97-d638-4c8a-9c0b-ccbab2197267"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Aviso por Gmail en lugar de Telegram",
+      "description": "Elimina el nodo Telegram (estaba desactivado) y añade Gmail (credencial Gmail account) al propio usuario con workflow, nodo, mensaje recortado, ejecución y enlace."
+    }
+  }
+]

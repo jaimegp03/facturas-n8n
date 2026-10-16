@@ -1,0 +1,255 @@
+[
+  {
+    "updatedAt": "2026-10-15T22:46:32.113Z",
+    "createdAt": "2026-10-15T22:46:32.113Z",
+    "id": "1I09fe1HC2Au62mz",
+    "name": "FACT — TEMP: categorías de suministros",
+    "description": null,
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "cc864a77-51d2-468a-b935-ae3c226afdbb",
+        "name": "Inicio",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          96
+        ],
+        "parameters": {}
+      },
+      {
+        "id": "51bdb529-7911-431f-a080-f77e517d4691",
+        "name": "Renumerar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          224,
+          0
+        ],
+        "parameters": {
+          "jsCode": "const out=[];\nfor (const id of [1,2,3,4]) out.push({json:{id, orden:id, activa:true}});\nout.push({json:{id:5, orden:90, activa:false}});\nlet o=9;\nfor (const id of [6,7,8,9,10,11,12,13,14,15,16]) out.push({json:{id, orden:o++, activa:true}});\no=20;\nfor (const id of [18,19,20,21,22,23,24,25]) out.push({json:{id, orden:o++, activa:true}});\nout.push({json:{id:17, orden:99, activa:true}});\nreturn out;"
+        }
+      },
+      {
+        "id": "ee9b02c6-e50a-4091-91af-da414fedf86e",
+        "name": "Actualizar categoría",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          448,
+          0
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "wUG04k8qKHE1fL8A"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $json.id }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "orden": "={{ $json.orden }}",
+              "activa": "={{ $json.activa }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "orden",
+                "displayName": "orden",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "activa",
+                "displayName": "activa",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "boolean",
+                "canBeUsedToMatch": true
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "2fd79e57-b27d-4b6c-8b21-d79ee48a3b7c",
+        "name": "Nuevas categorías",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          224,
+          192
+        ],
+        "parameters": {
+          "jsCode": "return [['Agua',5,'628'],['Luz',6,'628'],['Gas',7,'628'],['Telefonía e internet',8,'629']].map(([nombre,orden,cuenta_pgc])=>({json:{nombre,orden,activa:true,cuenta_pgc}}));"
+        }
+      },
+      {
+        "id": "e47111f2-f4f2-4d20-8ff7-28c27dc04cb3",
+        "name": "Insertar categoría",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          448,
+          192
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "insert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "wUG04k8qKHE1fL8A"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "nombre": "={{ $json.nombre }}",
+              "orden": "={{ $json.orden }}",
+              "activa": "={{ $json.activa }}",
+              "cuenta_pgc": "={{ $json.cuenta_pgc }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "nombre",
+                "displayName": "nombre",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "orden",
+                "displayName": "orden",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "activa",
+                "displayName": "activa",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "boolean",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "cuenta_pgc",
+                "displayName": "cuenta_pgc",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Inicio": {
+        "main": [
+          [
+            {
+              "node": "Renumerar",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Nuevas categorías",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Renumerar": {
+        "main": [
+          [
+            {
+              "node": "Actualizar categoría",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Nuevas categorías": {
+        "main": [
+          [
+            {
+              "node": "Insertar categoría",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "nodeGroups": [],
+    "pinData": null,
+    "versionId": "8aa826bb-d158-4a8f-9f95-ccada42499ee",
+    "activeVersionId": null,
+    "versionCounter": 1,
+    "triggerCount": 0,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-10-15T22:46:32.117Z",
+        "createdAt": "2026-10-15T22:46:32.117Z",
+        "role": "workflow:owner",
+        "workflowId": "1I09fe1HC2Au62mz",
+        "projectId": "bZtIqKac0YRZrt14",
+        "project": {
+          "updatedAt": "2026-10-08T21:42:10.105Z",
+          "createdAt": "2026-10-08T21:41:04.349Z",
+          "id": "bZtIqKac0YRZrt14",
+          "name": "Jaime Gomez <tu-correo@ejemplo.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "bd591b97-d638-4c8a-9c0b-ccbab2197267"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "TEMP categorías suministros",
+      "description": "Created with 5 nodes: Inicio, Renumerar, Actualizar categoría, Nuevas categorías, Insertar categoría"
+    }
+  }
+]

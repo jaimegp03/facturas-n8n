@@ -1,0 +1,114 @@
+[
+  {
+    "updatedAt": "2026-10-14T17:42:42.058Z",
+    "createdAt": "2026-10-14T17:20:12.814Z",
+    "id": "J7LjY2HXY4AmSkwX",
+    "name": "FACT — Utilidad: vaciar fact_facturas",
+    "description": "Manual: borra todas las filas de fact_facturas para repetir las pruebas de ingesta. No toca almacen/.",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "edda6338-0352-4f2b-b4a1-0fcb35f5913a",
+        "name": "Inicio",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          0
+        ],
+        "parameters": {}
+      },
+      {
+        "id": "0bd9eff2-d39c-486f-818b-becb603f1ccb",
+        "name": "Vaciar fact_facturas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          250,
+          0
+        ],
+        "parameters": {
+          "resource": "table",
+          "operation": "clear",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          }
+        }
+      },
+      {
+        "id": "d6de3bbd-8157-4210-987c-a9cbcee6a512",
+        "name": "Nota",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -60,
+          -260
+        ],
+        "parameters": {
+          "content": "## FACT — Utilidad: vaciar fact_facturas\nSolo ejecución manual (botón *Execute workflow*). Borra **todas** las filas de fact_facturas para repetir las pruebas desde cero.\n\nNo borra los originales de `almacen/` (n8n no puede borrar archivos): elimínalos a mano si hace falta. Volver a subir el mismo archivo sobrescribe la misma ruta (nombre = SHA-256).",
+          "width": 520,
+          "height": 220,
+          "color": 3
+        }
+      }
+    ],
+    "connections": {
+      "Inicio": {
+        "main": [
+          [
+            {
+              "node": "Vaciar fact_facturas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "nodeGroups": [],
+    "pinData": null,
+    "versionId": "36eafc45-5505-42ed-9591-8636dd9616b4",
+    "activeVersionId": null,
+    "versionCounter": 5,
+    "triggerCount": 0,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-10-14T17:20:12.817Z",
+        "createdAt": "2026-10-14T17:20:12.817Z",
+        "role": "workflow:owner",
+        "workflowId": "J7LjY2HXY4AmSkwX",
+        "projectId": "bZtIqKac0YRZrt14",
+        "project": {
+          "updatedAt": "2026-10-08T21:42:10.105Z",
+          "createdAt": "2026-10-08T21:41:04.349Z",
+          "id": "bZtIqKac0YRZrt14",
+          "name": "Jaime Gomez <tu-correo@ejemplo.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "bd591b97-d638-4c8a-9c0b-ccbab2197267"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Utilidad manual: vaciar fact_facturas",
+      "description": "Reutiliza el workflow temporal de la prueba de humo (el MCP no permite borrar workflows). Solo se ejecuta a mano."
+    }
+  }
+]

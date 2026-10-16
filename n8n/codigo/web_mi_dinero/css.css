@@ -1,0 +1,86 @@
+
+/* ---- Mi dinero ---- */
+.md-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 8px}
+.md-bar input[type=month]{min-width:150px}
+.md-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:8px 0 16px}
+.md-kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-panel);padding:12px 14px;box-shadow:var(--shadow-card);min-width:0}
+.md-kpi .l{font-size:12px;line-height:16px;font-weight:500;color:var(--muted)}
+.md-kpi .v{font:800 22px/28px var(--f-display);letter-spacing:-.02em;margin:2px 0;overflow-wrap:anywhere}
+.md-kpi .d{font-size:12.5px;line-height:16px;color:var(--muted)}
+.md-kpi.pos .v{color:var(--ok)}
+.md-kpi.neg .v{color:var(--bad)}
+.md-vacio{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:0 0 16px}
+.md-vacio p{margin:0;font-weight:600}
+.md-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.md-ancho{grid-column:1/-1}
+.md-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.md-tbl th,.md-tbl td{padding:6px 10px 6px 0;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.md-tbl td,.md-tbl th{position:relative}
+.md-tbl th{font-size:12px;line-height:16px;font-weight:500;color:var(--muted)}
+.md-tbl th.nombre{font-size:13.5px;line-height:20px;color:var(--ink)}
+.md-tbl .imp{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.md-tbl td.nombre{overflow-wrap:anywhere}
+.md-tbl input[type=number]{width:96px;text-align:right}
+.md-tbl .acc{white-space:nowrap;text-align:right}
+.md-barra{height:10px;min-width:96px;border-radius:5px;background:var(--surface-2);border:1px solid var(--line);overflow:hidden}
+.md-barra i{display:block;height:100%;background:var(--ok);border-radius:4px}
+.md-barra.aviso i{background:var(--amber)}
+.md-barra.superado i{background:var(--bad)}
+.md-barra.info i{background:var(--teal-500)}
+.md-add{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.md-add select{max-width:100%}
+.md-alertas{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.md-alertas li{display:flex;align-items:flex-start;gap:8px;font-size:13.5px}
+.md-alertas .chip{flex:none}
+.md-532{display:grid;gap:12px}
+.md-532 .fila{display:grid;gap:4px}
+.md-532 .fila b{font-weight:600}
+.md-532 .barra{position:relative}
+.md-532 .tick{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.md-dl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;margin:0;font-size:13.5px}
+.md-dl dt{color:var(--ink-2)}
+.md-dl dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.md-dl .tot{font-weight:800;border-top:1px solid var(--line);padding-top:4px}
+#dlgNomina,#dlgIngreso{width:min(640px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto}
+@media (max-width:900px){.md-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.md-grid{grid-template-columns:minmax(0,1fr)}}
+/* ---- Metas y resumen mensual (fase 4a) ---- */
+.mt-lista{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:8px}
+:is(.mt-card,.de-card){background:var(--surface);border:1px solid var(--line);border-radius:var(--r-panel);padding:12px 14px;box-shadow:var(--shadow-card);display:grid;gap:8px;min-width:0;align-content:start}
+:is(.mt-card,.de-card) header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+:is(.mt-card,.de-card) h4{margin:0;font:700 15px/20px var(--f-display);overflow-wrap:anywhere}
+:is(.mt-card,.de-card) .mt-num{margin:0;font-size:13.5px;font-variant-numeric:tabular-nums}
+:is(.mt-card,.de-card) .hint{margin:0;font-size:12.5px;line-height:16px}
+:is(.mt-card,.de-card) .mt-av{margin:0;padding:0;list-style:none;display:grid;gap:2px;font-size:12.5px;line-height:16px;color:var(--ink-2)}
+.mt-acc{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.mt-acc input[type=number]{width:104px;text-align:right}
+.mt-vacio{margin:8px 0 0}
+.rs-texto{margin:12px 0 0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-panel);white-space:pre-wrap;overflow-wrap:anywhere;font:13px/20px var(--f-body)}
+#dlgMeta{width:min(560px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto}
+
+/* ---- Renta (fase 4b) ---- */
+.rn-acc{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.rn-sub{margin:14px 0 4px;font:700 14px/20px var(--f-display)}
+.rn-aviso{margin:0 0 8px}
+
+/* ---- Vistas Facturas | Mi dinero ---- */
+.scene[hidden],.mdsec[hidden],#mdBar[hidden]{display:none}
+.vistas{display:flex;gap:2px;padding:3px;border-radius:999px;background:color-mix(in srgb,var(--on-accent) 16%,transparent)}
+.vistas a{padding:5px 16px;border-radius:999px;color:var(--on-accent);text-decoration:none;font-weight:600;font-size:13.5px;line-height:20px;white-space:nowrap}
+.vistas a:hover{background:color-mix(in srgb,var(--on-accent) 14%,transparent)}
+.vistas a[aria-current]{background:var(--surface);color:var(--ink)}
+body[data-vista="md"] .periodo{display:none}
+#mainMd{min-width:0;outline:0}
+#mainMd .chapter{min-height:0;border-top:0;padding-top:0}
+.md-cli{margin:0 0 8px}
+.md-avisocli{color:var(--ink-2)}
+.md-tools{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.md-tool h3{margin:0 0 4px}
+.md-tool .btn{margin-top:10px}
+.mt-vacio + .btn{margin-top:8px}
+@media (max-width:560px){.vistas{order:2}.vistas a{padding:5px 12px}}
+/* cabecera de una sola línea con el selector de vista: compacta antes de envolver */
+.top-in{gap:8px 10px}
+.top .cliente-sel select{width:210px}
+@media (max-width:1330px){.bt-lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
+@media (max-width:1400px){.top .cliente-sel select{width:170px}.periodo input{width:112px}.vistas a{padding:5px 12px}}
+.mdn .n,.mdn a{transition:none}

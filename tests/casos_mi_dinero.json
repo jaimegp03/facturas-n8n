@@ -1,0 +1,6 @@
+{"nomina": [
+  {"bruto_anual": 30000, "num_pagas": 14, "pagas_prorrateadas": false, "irpf_pct": 15},
+  {"bruto_anual": 30000, "num_pagas": 14, "pagas_prorrateadas": true, "irpf_pct": 15, "ss_pct": 6.35},
+  {"bruto_anual": 24000.5, "num_pagas": 12, "irpf_pct": 12.5, "otros_descuentos_mensuales": 35.2},
+  {"bruto_anual": 48000, "num_pagas": 14, "irpf_pct": 0}
+]}

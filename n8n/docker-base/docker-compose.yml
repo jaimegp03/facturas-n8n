@@ -1,0 +1,27 @@
+# Compose base de n8n (movido el 2026-10-15 desde Escritorio\n8n-local a esta carpeta).
+#
+# IMPORTANTE: el nombre del proyecto va FIJADO. Docker lo deriva por defecto de la carpeta de este archivo, y de él sale
+# el nombre del volumen con todos los datos de n8n (workflows, credenciales, ejecuciones): «n8n-local_n8n_data».
+# Si se quitara esta línea, el proyecto pasaría a llamarse «docker-base», Docker crearía un volumen nuevo y vacío y n8n
+# arrancaría sin tus datos (los de siempre seguirían en el volumen antiguo, sin usar).
+name: n8n-local
+
+volumes:
+  n8n_data:
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n_local
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Europe/Madrid
+    volumes:
+      - n8n_data:/home/node/.n8n

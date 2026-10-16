@@ -1,0 +1,18 @@
+# Se combina con el compose base, que está en n8n\docker-base (el nombre del proyecto, «n8n-local», va fijado allí: de él sale
+# el volumen n8n-local_n8n_data donde están tus datos). Desde C:\ProyectosClaude\facturas:
+#   docker compose -f n8n\docker-base\docker-compose.yml -f n8n\docker\docker-compose.override.yml up -d --build
+# Las rutas relativas de un compose parten de la carpeta del PRIMER archivo (n8n\docker-base): por eso el contexto es ../docker.
+services:
+  n8n:
+    image: n8n-facturas:2.42.5
+    build:
+      context: ../docker
+      dockerfile: Dockerfile
+    environment:
+      - NODE_FUNCTION_ALLOW_EXTERNAL=exceljs
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto,fs,path
+      - N8N_RESTRICT_FILE_ACCESS_TO=/home/node/.n8n-files
+      - N8N_PAYLOAD_SIZE_MAX=64
+      - N8N_FORMDATA_FILE_SIZE_MAX=64
+    volumes:
+      - C:/Users/GOMEZ/facturas-almacen:/home/node/.n8n-files/facturas

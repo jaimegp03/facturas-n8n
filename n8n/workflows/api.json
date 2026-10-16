@@ -1,0 +1,2435 @@
+[
+  {
+    "updatedAt": "2026-10-15T23:52:40.532Z",
+    "createdAt": "2026-10-14T18:27:05.235Z",
+    "id": "cIun06A6qcYKdqfs",
+    "name": "FACT — API",
+    "description": "GET /facturas, GET /resumen, GET /categorias, PATCH y DELETE /facturas/:id. Header Auth X-API-Key; cifras en Code (céntimos).",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "af2058ea-e6d2-45af-89dd-ff26bd740d8b",
+        "name": "GET /facturas",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          0
+        ],
+        "parameters": {
+          "httpMethod": "GET",
+          "path": "facturas",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "webhookId": "095a2494-3d7b-4bcc-adef-52e2f0c61489",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        }
+      },
+      {
+        "id": "8a58dc07-3b3b-4cef-b386-a8250535b580",
+        "name": "Listado: leer facturas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          240,
+          0
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "usuario_id",
+                "condition": "eq",
+                "keyValue": "default"
+              }
+            ]
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "059ef789-23d7-465b-ba41-38031a01c1f0",
+        "name": "Listado: filtrar y paginar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          0
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// GET /facturas: filtros, orden y paginación en Code (la Data Table no tiene\n// offset, así que se leen las filas del usuario y se pagina aquí).\nconst q = $('GET /facturas').first().json.query || {};\nconst errores = [];\nconst ESTADOS = ['ok', 'revisar', 'duplicada', 'posible_duplicada', 'borrada'];\nconst TIPOS = ['puntual', 'suscripcion', 'contrato'];\nconst DEDUCIBLES = ['si', 'no', 'parcial', 'dudoso', 'na'];\nconst ESTADOS_PAGO = ['pendiente', 'pagada'];\nconst TIPOS_FACTURA = ['completa', 'simplificada', 'simplificada_cualificada', 'rectificativa'];\nconst ORDENES = ['fecha', '-fecha', 'total', '-total', 'proveedor', '-proveedor', 'vencimiento'];\nconst fechaValida = (s) => {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return false;\n  const [y, m, d] = s.split('-').map(Number);\n  const dt = new Date(Date.UTC(y, m - 1, d));\n  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;\n};\nconst texto = (k) => (typeof q[k] === 'string' && q[k].trim() ? q[k].trim() : null);\nconst entero = (k, def, min, max) => {\n  const v = texto(k);\n  if (v === null) return def;\n  if (!/^\\d+$/.test(v) || Number(v) < min || Number(v) > max) { errores.push(`\"${k}\" debe ser un entero entre ${min} y ${max}.`); return def; }\n  return Number(v);\n};\nconst enumerado = (k, valores) => {\n  const v = texto(k);\n  if (v !== null && !valores.includes(v)) { errores.push(`\"${k}\" debe ser uno de: ${valores.join(', ')}.`); return null; }\n  return v;\n};\n\nconst desde = texto('desde');\nconst hasta = texto('hasta');\nif (desde !== null && !fechaValida(desde)) errores.push('\"desde\" debe ser una fecha AAAA-MM-DD válida.');\nif (hasta !== null && !fechaValida(hasta)) errores.push('\"hasta\" debe ser una fecha AAAA-MM-DD válida.');\nif (desde && hasta && fechaValida(desde) && fechaValida(hasta) && desde > hasta) errores.push('\"desde\" no puede ser posterior a \"hasta\".');\nconst categoria = texto('categoria');\nconst proveedor = texto('proveedor');\nconst tipo = enumerado('tipo', TIPOS);\nconst estado = enumerado('estado', ESTADOS);\nconst deducible = enumerado('deducible', DEDUCIBLES);\nconst estado_pago = enumerado('estado_pago', ESTADOS_PAGO);\nconst tipo_factura = enumerado('tipo_factura', TIPOS_FACTURA);\nconst orden = enumerado('orden', ORDENES) || '-fecha';\nconst cliente_id = texto('cliente_id') === null ? null : entero('cliente_id', null, 1, 1e12);\nconst vencidas = texto('vencidas');\nif (vencidas !== null && vencidas !== '1') errores.push('\"vencidas\" solo admite el valor 1.');\nconst busqueda = texto('q');\nif (busqueda !== null && busqueda.length > 100) errores.push('\"q\" admite como máximo 100 caracteres.');\nconst pagina = entero('pagina', 1, 1, 1000000);\nconst por_pagina = entero('por_pagina', 50, 1, 200);\n\nif (errores.length) return [{ json: { status: 400, body: { error: 'Parámetros no válidos.', detalles: errores } } }];\n\n// Búsqueda única: proveedor, NIF, número o importe («1161,60», «1.161,60» o «1161.60»;\n// compara con total, total a pagar y total en euros al céntimo).\nconst normNif = (s) => String(s || '').toUpperCase().replace(/[\\s.\\-\\/]/g, '');\nlet qTexto = null, qNif = null, qCent = null;\nif (busqueda) {\n  qTexto = busqueda.toLowerCase();\n  qNif = normNif(busqueda);\n  let t = busqueda.replace(/\\s|€/g, '');\n  if (/^-?\\d{1,3}(\\.\\d{3})+(,\\d{1,2})?$/.test(t)) t = t.replace(/\\./g, '').replace(',', '.');\n  else if (/^-?\\d+,\\d{1,2}$/.test(t)) t = t.replace(',', '.');\n  if (/^-?\\d+(\\.\\d{1,2})?$/.test(t)) qCent = Math.round(Number(t) * 100);\n}\nconst cent = (x) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x * 100) : null);\nconst coincide = (f) => {\n  if (String(f.proveedor || '').toLowerCase().includes(qTexto)) return true;\n  if (qNif.length >= 3 && normNif(f.nif).includes(qNif)) return true;\n  if (String(f.numero || '').toLowerCase().includes(qTexto)) return true;\n  if (qCent !== null && [f.total, f.total_a_pagar, f.total_eur].some((x) => cent(x) === qCent)) return true;\n  return false;\n};\n\nconst hoy = $now.setZone('Europe/Madrid').toISODate();\nconst prov = proveedor ? proveedor.toLowerCase() : null;\nconst filas = $input.all().map((i) => i.json).filter((f) => f && f.id !== undefined && f.id !== null && f.usuario_id === 'default');\nconst sel = filas.filter((f) => {\n  if (estado ? f.estado !== estado : f.estado === 'borrada') return false;\n  if (desde && !(f.fecha_emision && f.fecha_emision >= desde)) return false;\n  if (hasta && !(f.fecha_emision && f.fecha_emision <= hasta)) return false;\n  if (categoria && f.categoria !== categoria) return false;\n  if (tipo && f.tipo_gasto !== tipo) return false;\n  if (prov && !String(f.proveedor || '').toLowerCase().includes(prov)) return false;\n  if (cliente_id !== null && f.cliente_id !== cliente_id) return false;\n  if (deducible && f.deducible !== deducible) return false;\n  if (estado_pago && f.estado_pago !== estado_pago) return false;\n  if (tipo_factura && f.tipo_factura !== tipo_factura) return false;\n  if (vencidas && !(f.estado_pago !== 'pagada' && f.fecha_vencimiento && f.fecha_vencimiento < hoy)) return false;\n  if (busqueda && !coincide(f)) return false;\n  return true;\n});\n\n// Orden (a igualdad, id desc). Sin fecha o sin vencimiento: al final.\nconst porFecha = (a, b, campo, desc) => {\n  const fa = a[campo] || null;\n  const fb = b[campo] || null;\n  if (fa === fb) return 0;\n  if (fa === null) return 1;\n  if (fb === null) return -1;\n  return (fa < fb ? -1 : 1) * (desc ? -1 : 1);\n};\n// Importe en euros (total_eur; filas antiguas en EUR, el total). Sin importe en euros: al final.\nconst importe = (f) => (typeof f.total_eur === 'number' ? f.total_eur : (!f.moneda || f.moneda === 'EUR') && typeof f.total === 'number' ? f.total : null);\nconst porImporte = (a, b, desc) => {\n  const x = importe(a);\n  const y = importe(b);\n  if (x === y) return 0;\n  if (x === null) return 1;\n  if (y === null) return -1;\n  return desc ? y - x : x - y;\n};\nconst comparar = {\n  fecha: (a, b) => porFecha(a, b, 'fecha_emision', false),\n  '-fecha': (a, b) => porFecha(a, b, 'fecha_emision', true),\n  vencimiento: (a, b) => porFecha(a, b, 'fecha_vencimiento', false),\n  total: (a, b) => porImporte(a, b, false),\n  '-total': (a, b) => porImporte(a, b, true),\n  proveedor: (a, b) => String(a.proveedor || '').localeCompare(String(b.proveedor || ''), 'es', { sensitivity: 'base' }),\n  '-proveedor': (a, b) => String(b.proveedor || '').localeCompare(String(a.proveedor || ''), 'es', { sensitivity: 'base' }),\n}[orden];\nsel.sort((a, b) => comparar(a, b) || b.id - a.id);\nconst total = sel.length;\nconst paginas = Math.ceil(total / por_pagina);\nconst items = sel.slice((pagina - 1) * por_pagina, pagina * por_pagina);\nreturn [{ json: { status: 200, body: { items, total, pagina, por_pagina, paginas } } }];\n"
+        }
+      },
+      {
+        "id": "e37541d2-f795-44a0-8f9b-2323e38d875b",
+        "name": "Responder",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          3400,
+          480
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json.body) }}",
+          "options": {
+            "responseCode": "={{ $json.status }}"
+          }
+        }
+      },
+      {
+        "id": "2cdbfbe5-373d-4478-a483-8ac3f7087b8e",
+        "name": "GET /resumen",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          240
+        ],
+        "parameters": {
+          "httpMethod": "GET",
+          "path": "resumen",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "webhookId": "7be1373c-d28c-4922-bebd-499097497e17",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        }
+      },
+      {
+        "id": "45785883-b6eb-436d-87c1-8764eb876b01",
+        "name": "Resumen: leer facturas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          240,
+          240
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "usuario_id",
+                "condition": "eq",
+                "keyValue": "default"
+              }
+            ]
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "aaaf1e68-bb0b-41b2-a48c-6998e872b19f",
+        "name": "Resumen: calcular",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          240
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// GET /resumen: todas las cifras se calculan aquí en céntimos enteros y EN EUROS\n// (total_eur). Cuentan ok, revisar y posible_duplicada; se excluyen borrada y duplicada.\n// Una factura en otra moneda sin tipo de cambio no se suma: va en excluidas_sin_cambio.\n// cliente_id (opcional) limita a un cliente de la gestoría.\nconst q = $('GET /resumen').first().json.query || {};\nconst fechaValida = (s) => {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return false;\n  const [y, m, d] = s.split('-').map(Number);\n  const dt = new Date(Date.UTC(y, m - 1, d));\n  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;\n};\nconst DIA = 86400000;\nconst aMs = (s) => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };\nconst aFecha = (ms) => new Date(ms).toISOString().slice(0, 10);\nconst texto = (k) => (typeof q[k] === 'string' && q[k].trim() ? q[k].trim() : null);\n\nconst hoy = $now.setZone('Europe/Madrid').toISODate();\nlet desde = texto('desde');\nlet hasta = texto('hasta');\nconst errores = [];\nif (desde !== null && !fechaValida(desde)) errores.push('\"desde\" debe ser una fecha AAAA-MM-DD válida.');\nif (hasta !== null && !fechaValida(hasta)) errores.push('\"hasta\" debe ser una fecha AAAA-MM-DD válida.');\nconst clienteTxt = texto('cliente_id');\nif (clienteTxt !== null && !/^\\d{1,12}$/.test(clienteTxt)) errores.push('\"cliente_id\" debe ser un entero positivo.');\nconst cliente_id = clienteTxt === null ? null : Number(clienteTxt);\nif (errores.length) return [{ json: { status: 400, body: { error: 'Parámetros no válidos.', detalles: errores } } }];\n// Por defecto: últimos 12 meses hasta hoy (Europe/Madrid), ambos extremos incluidos.\nif (!hasta) hasta = hoy;\nif (!desde) desde = $now.setZone('Europe/Madrid').minus({ years: 1 }).plus({ days: 1 }).toISODate();\nif (desde > hasta) return [{ json: { status: 400, body: { error: 'Parámetros no válidos.', detalles: ['\"desde\" no puede ser posterior a \"hasta\".'] } } }];\n\nconst dias = Math.round((aMs(hasta) - aMs(desde)) / DIA) + 1;\nconst antHasta = aFecha(aMs(desde) - DIA);\nconst antDesde = aFecha(aMs(desde) - dias * DIA);\n\nconst cent = (x) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x * 100) : 0);\nconst eur = (c) => Math.round(c) / 100;\nconst pct = (parte, todo) => (todo ? Math.round((parte * 10000) / todo) / 100 : null);\nconst EXCLUIDOS = ['borrada', 'duplicada'];\n\n// === COMÚN Recurrentes: inicio ===\n// Bloque idéntico en FACT — API («Resumen: calcular»), FACT — Asesor de gastos\n// («Analizar y proponer») y FACT — Exportar Excel («Generar Excel»).\n// Si cambias algo aquí, cópialo en los tres. Céntimos enteros.\n// Por cada proveedor_norm con facturas suscripcion/contrato se toma la última\n// (fecha_emision; a igualdad, id) y la anterior. coste_anual = importe × periodos/año;\n// coste_mensual = coste_anual / 12 redondeado al céntimo; los totales suman esos valores.\nconst POR_ANIO = { semanal: 52, mensual: 12, bimestral: 6, trimestral: 4, semestral: 2, anual: 1 };\nconst centimos = (x) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x * 100) : 0);\nconst claveProveedor = (f) => f.proveedor_norm || String(f.proveedor || 'desconocido').toLowerCase();\nconst ordenFecha = (a, b) => (a.fecha_emision === b.fecha_emision ? a.id - b.id : a.fecha_emision < b.fecha_emision ? -1 : 1);\nconst calcularRecurrentes = (facturas) => {\n  const grupos = {};\n  for (const f of facturas.filter((x) => x.tipo_gasto === 'suscripcion' || x.tipo_gasto === 'contrato').sort(ordenFecha)) {\n    const k = claveProveedor(f);\n    (grupos[k] = grupos[k] || []).push(f);\n  }\n  let mensualC = 0;\n  let anualC = 0;\n  const items = Object.keys(grupos).map((clave) => {\n    const lista = grupos[clave];\n    const factura = lista[lista.length - 1];\n    const anterior = lista.length > 1 ? lista[lista.length - 2] : null;\n    const veces = POR_ANIO[factura.periodicidad] || null;\n    const importeC = centimos(factura.total);\n    const anual = veces ? importeC * veces : null;\n    const mensual = veces ? Math.round(anual / 12) : null;\n    if (veces) { anualC += anual; mensualC += mensual; }\n    return { clave, factura, anterior, num: lista.length, veces, importeC, mensualC: mensual, anualC: anual };\n  });\n  return { items, mensualC, anualC };\n};\n// === COMÚN Recurrentes: fin ===\n\n// Importe en euros: total_eur; en filas antiguas en EUR sin total_eur, el total. Nunca se suman monedas distintas.\nconst enEuros = (f) => (typeof f.total_eur === 'number' && Number.isFinite(f.total_eur) ? f.total_eur\n  : (!f.moneda || f.moneda === 'EUR') && typeof f.total === 'number' ? f.total : null);\nconst filasTodas = $input.all().map((i) => i.json).filter((f) => f && f.id !== undefined && f.id !== null && f.usuario_id === 'default' && (cliente_id === null || f.cliente_id === cliente_id));\nconst filas = filasTodas.map((f) => ({ ...f, total_original: f.total, total: enEuros(f) }));\nconst enRango = (f, a, b) => typeof f.fecha_emision === 'string' && f.fecha_emision >= a && f.fecha_emision <= b;\n\nconst delPeriodo = filas.filter((f) => enRango(f, desde, hasta));\nconst por_estado = {};\nfor (const f of delPeriodo) por_estado[f.estado || 'sin_estado'] = (por_estado[f.estado || 'sin_estado'] || 0) + 1;\nconst validasPeriodo = delPeriodo.filter((f) => !EXCLUIDOS.includes(f.estado));\nconst excluidas_sin_cambio = validasPeriodo.filter((f) => f.total === null).map((f) => f.id).sort((a, b) => a - b);\nconst cuentan = validasPeriodo.filter((f) => f.total !== null);\nconst sin_fecha = filas.filter((f) => !f.fecha_emision && !EXCLUIDOS.includes(f.estado)).length;\n\nconst totalC = cuentan.reduce((s, f) => s + cent(f.total), 0);\n\n// Por categoría\nconst cats = {};\nfor (const f of cuentan) {\n  const k = f.categoria || 'Otros';\n  cats[k] = cats[k] || { categoria: k, c: 0, num: 0 };\n  cats[k].c += cent(f.total);\n  cats[k].num += 1;\n}\nconst por_categoria = Object.values(cats)\n  .sort((a, b) => b.c - a.c || a.categoria.localeCompare(b.categoria))\n  .map((x) => ({ categoria: x.categoria, total: eur(x.c), num: x.num, pct: pct(x.c, totalC) }));\n\n// Por mes (todos los meses del periodo, también los que no tienen gasto)\nconst meses = {};\nlet [y, m] = desde.slice(0, 7).split('-').map(Number);\nconst finMes = hasta.slice(0, 7);\nfor (;;) {\n  const k = `${y}-${String(m).padStart(2, '0')}`;\n  meses[k] = 0;\n  if (k >= finMes) break;\n  m += 1;\n  if (m > 12) { m = 1; y += 1; }\n}\nfor (const f of cuentan) meses[f.fecha_emision.slice(0, 7)] += cent(f.total);\nconst por_mes = Object.keys(meses).sort().map((k) => ({ mes: k, total: eur(meses[k]) }));\n\n// Top proveedores (por proveedor_norm; se muestra el nombre de la factura más reciente)\nconst provs = {};\nfor (const f of [...cuentan].sort(ordenFecha)) {\n  const k = f.proveedor_norm || (f.proveedor || 'desconocido').toLowerCase();\n  provs[k] = provs[k] || { proveedor: f.proveedor, c: 0, num: 0 };\n  provs[k].proveedor = f.proveedor || provs[k].proveedor;\n  provs[k].c += cent(f.total);\n  provs[k].num += 1;\n}\nconst top_proveedores = Object.values(provs)\n  .sort((a, b) => b.c - a.c || String(a.proveedor).localeCompare(String(b.proveedor)))\n  .slice(0, 5)\n  .map((x) => ({ proveedor: x.proveedor, total: eur(x.c), num: x.num }));\n\n// Recurrente: bloque COMÚN Recurrentes (arriba). Último importe de cada proveedor_norm\n// suscripcion/contrato; sin periodicidad aparece con costes null y no suma.\nconst rec = calcularRecurrentes(cuentan);\nconst mensualC = rec.mensualC;\nconst anualC = rec.anualC;\nconst detalle = rec.items.map((it) => ({\n  proveedor: it.factura.proveedor,\n  categoria: it.factura.categoria,\n  tipo_gasto: it.factura.tipo_gasto,\n  periodicidad: it.factura.periodicidad || null,\n  ultimo_importe: eur(it.importeC),\n  coste_mensual: it.mensualC === null ? null : eur(it.mensualC),\n  coste_anual: it.anualC === null ? null : eur(it.anualC),\n  ultima_fecha: it.factura.fecha_emision,\n})).sort((a, b) => (b.coste_mensual ?? -1) - (a.coste_mensual ?? -1) || String(a.proveedor).localeCompare(String(b.proveedor)));\n\n// Periodo anterior de igual duración, inmediatamente antes\nconst antC = filas.filter((f) => enRango(f, antDesde, antHasta) && !EXCLUIDOS.includes(f.estado) && f.total !== null).reduce((s, f) => s + cent(f.total), 0);\n\nconst body = {\n  desde,\n  hasta,\n  cliente_id,\n  moneda: 'EUR',\n  total: eur(totalC),\n  num_facturas: cuentan.length,\n  excluidas_sin_cambio,\n  por_estado,\n  sin_fecha,\n  por_categoria,\n  por_mes,\n  top_proveedores,\n  recurrente: { mensual: eur(mensualC), anual: eur(anualC), detalle },\n  comparacion_periodo_anterior: {\n    desde: antDesde,\n    hasta: antHasta,\n    total: eur(antC),\n    diferencia: eur(totalC - antC),\n    pct: pct(totalC - antC, antC),\n  },\n};\nreturn [{ json: { status: 200, body } }];\n"
+        }
+      },
+      {
+        "id": "f898019f-6bc6-4be8-93f5-1a28d0d9649a",
+        "name": "GET /categorias",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          480
+        ],
+        "parameters": {
+          "httpMethod": "GET",
+          "path": "categorias",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "webhookId": "7137960c-df1b-42aa-a8ca-5640b0b626ea",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        }
+      },
+      {
+        "id": "cd69c231-e500-418f-9a41-3f13b457ecc8",
+        "name": "Categorías: leer",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          240,
+          480
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "wUG04k8qKHE1fL8A",
+            "cachedResultName": "fact_categorias"
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "4430df77-9f56-403a-b161-795b55bd5f29",
+        "name": "Categorías: activas ordenadas",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          480
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// GET /categorias: solo las activas, por orden.\nconst items = $input.all().map((i) => i.json)\n  .filter((c) => c && c.nombre && c.activa !== false)\n  .sort((a, b) => (a.orden ?? 999) - (b.orden ?? 999) || a.nombre.localeCompare(b.nombre))\n  .map((c) => ({ id: c.id, nombre: c.nombre, orden: c.orden ?? null, cuenta_pgc: c.cuenta_pgc ?? null }));\nreturn [{ json: { status: 200, body: { items, total: items.length } } }];\n"
+        }
+      },
+      {
+        "id": "c8a469bc-ce49-4522-82ac-2e76a9691f01",
+        "name": "PATCH /facturas/:id",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          760
+        ],
+        "parameters": {
+          "httpMethod": "PATCH",
+          "path": ":id",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "webhookId": "facturas",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        }
+      },
+      {
+        "id": "5c795405-4407-457c-a322-49aab788d8a3",
+        "name": "PATCH: validar id",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          760
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Valida el id (entero positivo) de /facturas/:id o de /facturas?id=N (la\n// variante ?id= existe porque el preflight CORS de n8n 2.42 solo anuncia un\n// método en rutas dinámicas). Salida común con «Lote: validar»: {modo, peticiones}.\nconst w = $input.first().json;\nconst raw = String((w.params && w.params.id) ?? (w.query && w.query.id) ?? '').trim();\nif (!/^\\d{1,12}$/.test(raw) || Number(raw) < 1) {\n  return [{ json: { _error: true, status: 400, body: { error: 'Parámetros no válidos.', detalles: ['El id de la factura debe ser un entero positivo (/facturas/:id o /facturas?id=N).'] } } }];\n}\nreturn [{ json: { _error: false, modo: 'uno', id: Number(raw), body: w.body, peticiones: [{ id: Number(raw), cuerpo: w.body }] } }];\n"
+        }
+      },
+      {
+        "id": "d7ab0a8d-eef9-4f27-b56e-85538a6af573",
+        "name": "¿PATCH id válido?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          480,
+          760
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "ok",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "92de16dd-05cd-4e2e-b0b8-658ac5666d26",
+        "name": "PATCH: leer factura",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          720,
+          700
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "usuario_id",
+                "condition": "eq",
+                "keyValue": "default"
+              }
+            ]
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true,
+        "executeOnce": true
+      },
+      {
+        "id": "0a5f55e3-4f5c-4d48-8bd3-c311436b08dc",
+        "name": "PATCH: leer categorías",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          960,
+          700
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "wUG04k8qKHE1fL8A",
+            "cachedResultName": "fact_categorias"
+          },
+          "returnAll": true
+        },
+        "executeOnce": true,
+        "alwaysOutputData": true
+      },
+      {
+        "id": "509c2f6b-9970-4eeb-ab7c-dbf7b66c9c57",
+        "name": "PATCH: revalidar y fusionar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1200,
+          700
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// PATCH /facturas/:id, /facturas?id=N y /facturas/lote: lista blanca de campos,\n// validación de tipos (400/422), recálculo fiscal y revalidación con el bloque\n// COMÚN de la Ingesta, y fusión con la fila actual. En lote, cada factura se\n// procesa por separado y los errores se devuelven por id.\nconst v = $('PATCH: validar id').isExecuted ? $('PATCH: validar id').first().json : $('Lote: validar').first().json;\nconst modo = v.modo;\nconst filas = $('PATCH: leer factura').all().map((i) => i.json).filter((x) => x && x.id !== undefined && x.id !== null && x.usuario_id === 'default');\nconst filasCategorias = $('PATCH: leer categorías').all().map((i) => i.json).filter((c) => c && c.nombre);\nconst categorias = filasCategorias.filter((c) => c.activa !== false).map((c) => c.nombre);\nconst clientes = $('PATCH: leer clientes').all().map((i) => i.json).filter((c) => c && c.id !== undefined && c.id !== null);\nconst reglas = $('PATCH: leer reglas').all().map((i) => i.json).filter((r) => r && r.proveedor_norm);\nconst bcePedido = $('PATCH: preparar cambio').first().json.bce;\nconst bceCsv = bcePedido ? (($input.first().json || {}).data ?? null) : null;\n\n// === COMÚN Ingesta/API: inicio ===\n// Bloque idéntico en FACT — Ingesta («Interpretar y validar») y FACT — API\n// («PATCH: revalidar y fusionar»). Si cambias algo aquí, cámbialo en ambos.\n// Todas las cifras en céntimos enteros. Diseño: docs/diseno-gestoria.md §2.\nconst num = (x) => {\n  if (x === null || x === undefined || x === '') return null;\n  let v = x;\n  if (typeof v === 'string') {\n    v = v.replace(/[^0-9,.\\-]/g, '');\n    if (v.includes(',') && v.includes('.')) v = v.lastIndexOf(',') > v.lastIndexOf('.') ? v.replace(/\\./g, '').replace(',', '.') : v.replace(/,/g, '');\n    else v = v.replace(',', '.');\n    v = Number(v);\n  }\n  return typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100) / 100 : null;\n};\nconst cent = (x) => Math.round(x * 100);\nconst fechaValida = (s) => {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return false;\n  const [y, m, dd] = s.split('-').map(Number);\n  const dt = new Date(Date.UTC(y, m - 1, dd));\n  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === dd && y >= 1990;\n};\nconst txtOrNull = (s) => (typeof s === 'string' && s.trim() ? s.trim() : null);\n// Método de pago: primera letra en mayúscula y el resto como venga («tarjeta» → «Tarjeta», «PayPal» igual).\nconst normalizarMetodoPago = (s) => { const t = txtOrNull(s); return t ? t.charAt(0).toLocaleUpperCase('es-ES') + t.slice(1) : null; };\nconst SUFIJOS = new Set(['sa', 'sau', 'sl', 'slu', 'sll', 'slne', 'scoop', 'sc', 'cb', 'bv', 'nv', 'ab', 'ltd', 'limited', 'inc', 'llc', 'gmbh', 'ag', 'plc', 'corp', 'corporation', 'spa', 'srl', 'sas', 'sarl', 'oy', 'aps', 'as', 'unipersonal', 'co']);\nconst normalizarProveedor = (s) => {\n  if (!s) return null;\n  let t = s.normalize('NFD').replace(/\\p{M}/gu, '').toLowerCase().replace(/\\./g, '').replace(/[^a-z0-9]+/g, ' ').trim();\n  const w = t.split(' ').filter(Boolean);\n  while (w.length > 1 && SUFIJOS.has(w[w.length - 1])) w.pop();\n  return w.join(' ') || null;\n};\nconst r2 = (c) => Math.round(c) / 100; // céntimos -> euros\n\n// --- NIF: normalizado (mayúsculas, sin espacios/guiones/puntos, sin «ES» delante de un NIF español) ---\nconst PAISES_UE = new Set(['AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'EL', 'GR', 'FI', 'FR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK', 'XI']);\nconst LETRAS_DNI = 'TRWAGMYFPDXBNJZSQVHLCKE';\nconst normalizarNif = (s) => {\n  if (s === null || s === undefined) return null;\n  let v = String(s).toUpperCase().replace(/[\\s.\\-\\/]/g, '');\n  if (/^ES[0-9A-Z]\\d{7}[0-9A-Z]$/.test(v)) v = v.slice(2);\n  return v || null;\n};\n// 'ES' (forma de NIF español), 'UE' (prefijo de país UE distinto de ES), 'EXT' (resto: EIN, EU-OSS, otros países) o null.\nconst origenNif = (s) => {\n  const v = normalizarNif(s);\n  if (!v) return null;\n  if (/^(\\d|[A-Z]\\d)/.test(v)) return 'ES';\n  if (PAISES_UE.has(v.slice(0, 2))) return 'UE';\n  return 'EXT';\n};\n// true/false según el dígito de control (DNI, NIE, CIF y NIF K/L/M); null si no hay NIF o es extranjero.\nconst validarNif = (s) => {\n  const v = normalizarNif(s);\n  if (!v) return null;\n  if (origenNif(v) !== 'ES') return null;\n  if (/^\\d{8}[A-Z]$/.test(v)) return LETRAS_DNI[Number(v.slice(0, 8)) % 23] === v[8];\n  if (/^[XYZ]\\d{7}[A-Z]$/.test(v)) return LETRAS_DNI[Number('XYZ'.indexOf(v[0]) + v.slice(1, 8)) % 23] === v[8];\n  if (/^[ABCDEFGHJKLMNPQRSUVW]\\d{7}[0-9A-J]$/.test(v)) {\n    let suma = 0;\n    v.slice(1, 8).split('').map(Number).forEach((x, i) => {\n      if (i % 2 === 0) { const y = x * 2; suma += Math.floor(y / 10) + (y % 10); } else suma += x;\n    });\n    const ctrl = (10 - (suma % 10)) % 10;\n    const letra = 'JABCDEFGHI'[ctrl];\n    if ('KLMNPQRSW'.includes(v[0])) return v[8] === letra;\n    if ('ABEH'.includes(v[0])) return v[8] === String(ctrl);\n    return v[8] === String(ctrl) || v[8] === letra;\n  }\n  return false;\n};\n\n// --- Desglose de IVA: [{base, tipo_iva, cuota_iva, tipo_re, cuota_re}], una línea por tipo ---\n// Las líneas al 0 % sin cuota pasan a base_exenta.\nconst normalizarDesglose = (arr, baseExenta) => {\n  let exentaC = cent(num(baseExenta) || 0);\n  const lineas = [];\n  for (const l of Array.isArray(arr) ? arr : []) {\n    if (!l || typeof l !== 'object') continue;\n    const x = { base: num(l.base), tipo_iva: num(l.tipo_iva), cuota_iva: num(l.cuota_iva), tipo_re: num(l.tipo_re) || 0, cuota_re: num(l.cuota_re) || 0 };\n    if (x.base === null && x.cuota_iva === null) continue;\n    if ((x.tipo_iva === 0 || x.tipo_iva === null) && !x.cuota_iva && !x.cuota_re && x.base !== null) { exentaC += cent(x.base); continue; }\n    lineas.push(x);\n  }\n  return { desglose: lineas, base_exenta: r2(exentaC) };\n};\n// Campos de compatibilidad: base = Σ bases + exenta; iva_tipo = tipo de la base mayor; iva_cuota = Σ cuotas (sin recargo).\nconst derivarCompat = (desglose, baseExenta) => {\n  const exC = cent(baseExenta || 0);\n  if (!desglose.length && !exC) return { base: null, iva_tipo: null, iva_cuota: null, cuota_re: 0 };\n  if (desglose.some((l) => l.base === null || l.cuota_iva === null)) {\n    return { base: desglose.some((l) => l.base === null) ? null : r2(desglose.reduce((s, l) => s + cent(l.base), exC)), iva_tipo: desglose.length ? desglose[0].tipo_iva : 0, iva_cuota: null, cuota_re: r2(desglose.reduce((s, l) => s + cent(l.cuota_re || 0), 0)) };\n  }\n  let mayor = null;\n  for (const l of desglose) if (!mayor || Math.abs(l.base) > Math.abs(mayor.base)) mayor = l;\n  return {\n    base: r2(desglose.reduce((s, l) => s + cent(l.base), exC)),\n    iva_tipo: mayor ? mayor.tipo_iva : 0,\n    iva_cuota: r2(desglose.reduce((s, l) => s + cent(l.cuota_iva), 0)),\n    cuota_re: r2(desglose.reduce((s, l) => s + cent(l.cuota_re || 0), 0)),\n  };\n};\n\n// --- Operación y autorrepercusión ---\nconst OPERACIONES = ['interior', 'intracomunitaria', 'isp_nacional', 'extracomunitaria', 'importacion', 'exenta'];\nconst AUTORREPERCUTEN = ['intracomunitaria', 'isp_nacional', 'extracomunitaria'];\n// mencion: 'inversion_sujeto_pasivo' | 'reverse_charge' | 'intracomunitaria' | 'exenta' | 'no_sujeta' | 'ninguna' | null\nconst determinarOperacion = ({ nif, desglose, base_exenta, mencion }) => {\n  const sinIva = !desglose.some((l) => cent(l.cuota_iva || 0) !== 0);\n  const origen = origenNif(nif);\n  if (sinIva && (mencion === 'inversion_sujeto_pasivo' || (mencion === 'reverse_charge' && origen === 'ES'))) return 'isp_nacional';\n  if (sinIva && origen === 'UE') return 'intracomunitaria';\n  if (sinIva && origen === 'EXT') return 'extracomunitaria';\n  if (sinIva && cent(base_exenta || 0) !== 0) return 'exenta';\n  return 'interior';\n};\nconst calcularAutorrepercutida = (operacion, baseExenta, tipo) => (AUTORREPERCUTEN.includes(operacion)\n  ? r2(Math.round((cent(baseExenta || 0) * (typeof tipo === 'number' && tipo > 0 ? tipo : 21)) / 100))\n  : 0);\n\n// --- Deducibilidad (orden del diseño §2). cliente = fila de fact_clientes ---\nconst DEDUCIBLES = ['si', 'no', 'parcial', 'dudoso', 'na'];\nconst CATEGORIAS_DUDOSAS = ['Restaurantes y comida a domicilio', 'Viajes'];\nconst calcularDeducible = (f, cliente, forzado) => {\n  const regimen = (cliente && cliente.regimen_iva) || 'particular';\n  const prorrata = cliente && typeof cliente.prorrata_pct === 'number' && cliente.prorrata_pct >= 0 && cliente.prorrata_pct <= 100 ? cliente.prorrata_pct : 100;\n  const ivaC = f.desglose.reduce((s, l) => s + cent(l.cuota_iva || 0), 0) + cent(f.cuota_autorrepercutida || 0);\n  const cuotaCon = (pct) => r2(Math.round((ivaC * pct) / 100));\n  const res = (deducible, motivo) => ({\n    deducible,\n    motivo_deducible: motivo,\n    cuota_deducible: deducible === 'si' || deducible === 'parcial' ? cuotaCon(prorrata) : 0,\n  });\n  if (forzado && DEDUCIBLES.includes(forzado.deducible)) return res(forzado.deducible, forzado.motivo || 'Manual: marcado a mano.');\n  if (regimen === 'particular') return res('na', 'El cliente es un particular: no deduce IVA.');\n  if (regimen === 'recargo_equivalencia') return res('no', 'Cliente en recargo de equivalencia: no deduce el IVA soportado.');\n  if (f.tipo_factura === 'simplificada' && !f.destinatario_nif) return res('no', 'Factura simplificada sin NIF del destinatario.');\n  if (f.nif_valido === false) return res('no', 'NIF del proveedor no válido (subsanable: pide una factura corregida).');\n  if (!f.numero) return res('no', 'Falta el número de factura (subsanable).');\n  if (CATEGORIAS_DUDOSAS.includes(f.categoria)) return res('dudoso', 'Restauración o viajes: deducible solo si está afecto a la actividad.');\n  if (ivaC === 0) return res('na', 'Sin IVA soportado ni autorrepercutido.');\n  if (prorrata < 100) return res('parcial', `Deducible al ${prorrata} % (prorrata del cliente).`);\n  return res('si', AUTORREPERCUTEN.includes(f.operacion) ? 'Deducible: IVA autorrepercutido.' : 'Factura completa con los datos obligatorios.');\n};\n\n// --- Reglas y cuentas: regla del cliente > regla global > categoría.cuenta_pgc > 629 ---\nconst buscarRegla = (reglas, proveedorNorm, clienteId, campo) => {\n  if (!proveedorNorm) return null;\n  const tiene = (r) => r && r.proveedor_norm === proveedorNorm && txtOrNull(r[campo]);\n  return (reglas || []).find((r) => tiene(r) && r.cliente_id === clienteId)\n    || (reglas || []).find((r) => tiene(r) && (r.cliente_id === null || r.cliente_id === undefined))\n    || null;\n};\nconst resolverCuenta = (proveedorNorm, categoria, clienteId, reglas, categorias) => {\n  const regla = buscarRegla(reglas, proveedorNorm, clienteId, 'cuenta_gasto');\n  const cat = (categorias || []).find((c) => c && c.nombre === categoria);\n  const cuenta = (regla && txtOrNull(regla.cuenta_gasto)) || (cat && txtOrNull(cat.cuenta_pgc)) || '629';\n  return { cuenta_gasto: cuenta, cuenta_proveedor: cuentaProveedor(cuenta) };\n};\nconst cuentaProveedor = (cuenta) => (String(cuenta || '').startsWith('60') ? '400' : '410');\n\n// --- Moneda: tipo_cambio = EUR por 1 unidad (BCE); total_eur = total × tipo_cambio ---\nconst aplicarCambio = (f, tipoCambio) => {\n  if (!f.moneda || f.moneda === 'EUR') return { tipo_cambio: 1, total_eur: f.total };\n  if (typeof tipoCambio !== 'number' || !(tipoCambio > 0) || f.total === null) return { tipo_cambio: null, total_eur: null };\n  return { tipo_cambio: tipoCambio, total_eur: r2(Math.round(cent(f.total) * tipoCambio)) };\n};\n// CSV del BCE (format=csvdata): último OBS_VALUE con TIME_PERIOD <= fecha. Devuelve EUR por unidad (1/valor) o null.\nconst tipoCambioBce = (csv, fecha) => {\n  if (typeof csv !== 'string' || !csv.trim()) return null;\n  const lineas = csv.trim().split(/\\r?\\n/);\n  const cab = lineas[0].split(',');\n  const iT = cab.indexOf('TIME_PERIOD');\n  const iV = cab.indexOf('OBS_VALUE');\n  if (iT < 0 || iV < 0) return null;\n  let mejor = null;\n  for (const l of lineas.slice(1)) {\n    const c = l.split(',');\n    const v = Number(c[iV]);\n    if (/^\\d{4}-\\d{2}-\\d{2}$/.test(c[iT]) && c[iT] <= fecha && v > 0 && (!mejor || c[iT] > mejor.t)) mejor = { t: c[iT], v };\n  }\n  return mejor ? Math.round((1 / mejor.v) * 1e6) / 1e6 : null;\n};\n\n// --- Nº de recepción: siguiente correlativo del cliente en el año ---\nconst siguienteRecepcion = (filas, clienteId, anio) => {\n  const pre = `${anio}-`;\n  let max = 0;\n  for (const f of filas || []) {\n    if (f && f.cliente_id === clienteId && typeof f.num_recepcion === 'string' && f.num_recepcion.startsWith(pre)) {\n      const n = Number(f.num_recepcion.slice(pre.length));\n      if (Number.isFinite(n) && n > max) max = n;\n    }\n  }\n  return pre + String(max + 1).padStart(6, '0');\n};\n\n// --- Completa los campos fiscales derivados de una factura (Ingesta, PATCH y migración) ---\n// f: nif, destinatario_nif, numero, categoria, tipo_factura, desglose (array), base_exenta, suplidos,\n//    irpf_tipo, irpf_cuota, total, moneda, tipo_cambio, operacion (indicada o null), mencion, tipo_autorrepercusion.\nconst TIPOS_FACTURA = ['completa', 'simplificada', 'simplificada_cualificada', 'rectificativa'];\nconst completarFiscal = (f, cliente, forzado) => {\n  const nd = normalizarDesglose(f.desglose, f.base_exenta);\n  const total = num(f.total);\n  const compat = derivarCompat(nd.desglose, nd.base_exenta);\n  const tipo_factura = TIPOS_FACTURA.includes(f.tipo_factura) ? f.tipo_factura : 'completa';\n  let irpf_cuota = num(f.irpf_cuota);\n  const irpf_tipo = num(f.irpf_tipo) || 0;\n  if (irpf_cuota === null && irpf_tipo > 0) {\n    const baseIrpfC = nd.desglose.reduce((s, l) => s + cent(l.base || 0), 0);\n    irpf_cuota = r2(Math.round((baseIrpfC * irpf_tipo) / 100));\n  }\n  irpf_cuota = Math.abs(irpf_cuota || 0);\n  if (total !== null && total < 0) irpf_cuota = -irpf_cuota; // rectificativas: retención negativa\n  const nif = normalizarNif(f.nif);\n  const destinatario_nif = normalizarNif(f.destinatario_nif);\n  const operacion = OPERACIONES.includes(f.operacion) ? f.operacion\n    : determinarOperacion({ nif, desglose: nd.desglose, base_exenta: nd.base_exenta, mencion: f.mencion });\n  const cuota_autorrepercutida = calcularAutorrepercutida(operacion, nd.base_exenta, num(f.tipo_autorrepercusion));\n  const nif_valido = validarNif(nif);\n  const moneda = typeof f.moneda === 'string' && /^[A-Z]{3}$/.test(f.moneda) ? f.moneda : 'EUR';\n  const cambio = aplicarCambio({ moneda, total }, num(f.tipo_cambio) === null ? null : Number(f.tipo_cambio));\n  const base = {\n    nif,\n    destinatario_nif,\n    tipo_factura,\n    operacion,\n    desglose: nd.desglose,\n    desglose_iva_json: JSON.stringify(nd.desglose),\n    base_exenta: nd.base_exenta,\n    base: compat.base,\n    iva_tipo: compat.iva_tipo,\n    iva_cuota: compat.iva_cuota,\n    cuota_re: compat.cuota_re,\n    irpf_tipo,\n    irpf_cuota,\n    suplidos: num(f.suplidos) || 0,\n    total,\n    total_a_pagar: total === null ? null : r2(cent(total) - cent(irpf_cuota)),\n    cuota_autorrepercutida,\n    nif_valido,\n    moneda,\n    tipo_cambio: cambio.tipo_cambio,\n    total_eur: cambio.total_eur,\n  };\n  const ded = calcularDeducible({ ...base, numero: txtOrNull(f.numero), categoria: f.categoria }, cliente, forzado);\n  return { ...base, ...ded };\n};\n\n// --- Validación (céntimos). hoy = AAAA-MM-DD en Europe/Madrid. total_a_pagar_leido: el impreso (Ingesta) ---\nconst validarFactura = (f, hoy) => {\n  const errores = [];\n  const fmt = (x) => x.toFixed(2);\n  if (!f.proveedor) errores.push('No se ha identificado el proveedor.');\n  if (f.total === null) errores.push('No se ha encontrado el total.');\n  else if (cent(f.total) === 0) errores.push('El total no puede ser 0.');\n  else if (f.total < 0 && f.tipo_factura !== 'rectificativa') errores.push(`El total (${fmt(f.total)}) es negativo y la factura no es rectificativa.`);\n  const desglose = f.desglose || [];\n  const exC = cent(f.base_exenta || 0);\n  if (!desglose.length && !exC) {\n    errores.push('No se puede comprobar base + IVA = total: falta base imponible y cuota de IVA.');\n  } else if (desglose.some((l) => l.base === null || l.cuota_iva === null)) {\n    const faltan = [desglose.some((l) => l.base === null) ? 'base imponible' : null, desglose.some((l) => l.cuota_iva === null) ? 'cuota de IVA' : null].filter(Boolean).join(' y ');\n    errores.push(`No se puede comprobar base + IVA = total: falta ${faltan}.`);\n  } else if (f.total !== null) {\n    const baseC = desglose.reduce((s, l) => s + cent(l.base), 0) + exC;\n    const ivaC = desglose.reduce((s, l) => s + cent(l.cuota_iva), 0);\n    const reC = desglose.reduce((s, l) => s + cent(l.cuota_re || 0), 0);\n    const supC = cent(f.suplidos || 0);\n    const sumaC = baseC + ivaC + reC + supC;\n    const dif = sumaC - cent(f.total);\n    if (Math.abs(dif) > 2) {\n      if (!reC && !supC) errores.push(`Base (${fmt(baseC / 100)}) + IVA (${fmt(ivaC / 100)}) = ${fmt(sumaC / 100)}, no cuadra con el total (${fmt(f.total)}): diferencia de ${fmt(dif / 100)} €.`);\n      else errores.push(`Base (${fmt(baseC / 100)}) + IVA (${fmt(ivaC / 100)}) + recargo (${fmt(reC / 100)}) + suplidos (${fmt(supC / 100)}) = ${fmt(sumaC / 100)}, no cuadra con el total (${fmt(f.total)}): diferencia de ${fmt(dif / 100)} €.`);\n    }\n  }\n  if (f.total !== null && f.total_a_pagar_leido !== null && f.total_a_pagar_leido !== undefined) {\n    const esperado = cent(f.total) - cent(f.irpf_cuota || 0);\n    const dif = esperado - cent(f.total_a_pagar_leido);\n    if (Math.abs(dif) > 2) errores.push(`Total (${fmt(f.total)}) − retención (${fmt(f.irpf_cuota || 0)}) = ${fmt(esperado / 100)}, no cuadra con el total a pagar (${fmt(f.total_a_pagar_leido)}).`);\n  }\n  if (!f.fecha_emision) errores.push('Fecha de emisión ausente o no válida.');\n  else if (f.fecha_emision > hoy) errores.push(`La fecha de emisión (${f.fecha_emision}) es futura.`);\n  if (f.moneda && f.moneda !== 'EUR' && (f.total_eur === null || f.total_eur === undefined)) errores.push(`Sin tipo de cambio para ${f.moneda}: no se suma en los totales en euros.`);\n  return errores;\n};\n// === COMÚN Ingesta/API: fin ===\n\nconst hoy = $now.setZone('Europe/Madrid').toISODate();\nconst ahora = $now.setZone('Europe/Madrid').toISO();\nconst TIPOS = ['puntual', 'suscripcion', 'contrato'];\nconst PERIODOS = ['semanal', 'mensual', 'bimestral', 'trimestral', 'semestral', 'anual'];\nconst ESTADOS = ['ok', 'revisar', 'duplicada', 'posible_duplicada'];\nconst ESTADOS_PAGO = ['pendiente', 'pagada'];\nconst PERMITIDOS = ['proveedor', 'nif', 'numero', 'fecha_emision', 'fecha_vencimiento', 'base', 'iva_tipo', 'iva_cuota', 'total', 'moneda', 'metodo_pago', 'categoria', 'subcategoria', 'tipo_gasto', 'periodicidad', 'estado',\n  'cliente_id', 'tipo_factura', 'rectifica_numero', 'fecha_operacion', 'operacion', 'desglose_iva_json', 'base_exenta', 'irpf_tipo', 'irpf_cuota', 'suplidos', 'cuenta_gasto', 'cuenta_proveedor', 'deducible', 'estado_pago', 'fecha_pago'];\nconst COLUMNAS = ['usuario_id', 'hash_sha256', 'archivo_ruta', 'archivo_nombre', 'mime', 'proveedor', 'proveedor_norm', 'nif', 'numero', 'fecha_emision', 'fecha_vencimiento', 'lineas_json', 'base', 'iva_tipo', 'iva_cuota', 'total', 'moneda', 'metodo_pago', 'categoria', 'subcategoria', 'tipo_gasto', 'periodicidad', 'confianza', 'motivo', 'estado', 'errores_validacion', 'origen_categoria', 'creado', 'actualizado',\n  'cliente_id', 'destinatario_nif', 'tipo_factura', 'rectifica_numero', 'fecha_operacion', 'operacion', 'desglose_iva_json', 'base_exenta', 'cuota_re', 'irpf_tipo', 'irpf_cuota', 'suplidos', 'total_a_pagar', 'cuota_autorrepercutida', 'nif_valido', 'deducible', 'motivo_deducible', 'cuota_deducible', 'cuenta_gasto', 'cuenta_proveedor', 'tipo_cambio', 'total_eur', 'num_recepcion', 'estado_pago', 'fecha_pago', 'movimiento_id'];\n\n// Desglose guardado (o, en filas antiguas, el que sale de base/iva_tipo/iva_cuota).\nconst desgloseDe = (f) => {\n  try {\n    const d = JSON.parse(f.desglose_iva_json);\n    if (Array.isArray(d)) return d;\n  } catch (e) { /* fila antigua */ }\n  return f.base === null || f.base === undefined ? [] : [{ base: f.base, tipo_iva: f.iva_tipo, cuota_iva: f.iva_cuota, tipo_re: 0, cuota_re: 0 }];\n};\n\n// Procesa una petición sobre la fila actual. Devuelve {ok, status, error, detalles} o {ok, fila, factura, regla, revalidacion}.\nconst procesar = (id, cuerpo, enLote) => {\n  const malo = (status, error, detalles) => ({ ok: false, status, error, detalles });\n  if (!cuerpo || typeof cuerpo !== 'object' || Array.isArray(cuerpo)) return malo(400, 'El cuerpo debe ser un objeto JSON con los campos a corregir.', []);\n  const claves = Object.keys(cuerpo);\n  const noPermitidos = claves.filter((k) => !PERMITIDOS.includes(k));\n  if (noPermitidos.length) return malo(400, 'Campos no permitidos.', [`No se pueden modificar: ${noPermitidos.join(', ')}. Permitidos: ${PERMITIDOS.join(', ')}.`]);\n  if (!claves.length) return malo(400, 'No hay campos que modificar.', []);\n  const actual = filas.find((x) => x.id === id);\n  if (!actual) return { ok: false, status: 404, error: 'Factura no encontrada.', id };\n\n  const errTipos = [];\n  const c = {};\n  const comoTexto = (k, { nulo = true, max = 300 } = {}) => {\n    const val = cuerpo[k];\n    if (val === null || (typeof val === 'string' && !val.trim())) {\n      if (nulo) c[k] = null; else errTipos.push(`\"${k}\" no puede estar vacío.`);\n      return;\n    }\n    if (typeof val !== 'string') { errTipos.push(`\"${k}\" debe ser texto.`); return; }\n    if (val.trim().length > max) { errTipos.push(`\"${k}\" admite como máximo ${max} caracteres.`); return; }\n    c[k] = val.trim();\n  };\n  const esNumero = (val) => (typeof val === 'number' ? Number.isFinite(val) : typeof val === 'string' && /^-?\\d+(\\.\\d+)?$/.test(val.trim()));\n  const comoImporte = (k, { nulo = true } = {}) => {\n    const val = cuerpo[k];\n    if (val === null) { if (nulo) c[k] = null; else errTipos.push(`\"${k}\" no puede ser nulo.`); return; }\n    if (!esNumero(val)) { errTipos.push(`\"${k}\" debe ser un número (punto decimal).`); return; }\n    c[k] = Math.round(Number(val) * 100) / 100;\n  };\n  const comoFecha = (k, { nulo = true } = {}) => {\n    const val = cuerpo[k];\n    if (val === null) { if (nulo) c[k] = null; else errTipos.push(`\"${k}\" no puede ser nulo.`); return; }\n    if (!fechaValida(val)) { errTipos.push(`\"${k}\" debe ser una fecha AAAA-MM-DD válida.`); return; }\n    c[k] = val;\n  };\n  const comoEnum = (k, valores, { nulo = false } = {}) => {\n    const val = cuerpo[k];\n    if (val === null && nulo) { c[k] = null; return; }\n    if (!valores.includes(val)) { errTipos.push(`\"${k}\" debe ser uno de: ${valores.join(', ')}${nulo ? ' o null' : ''}.`); return; }\n    c[k] = val;\n  };\n  const comoCuenta = (k) => {\n    const val = cuerpo[k];\n    if (typeof val !== 'string' || !/^\\d{3,12}$/.test(val.trim())) { errTipos.push(`\"${k}\" debe ser una cuenta del PGC (solo dígitos, de 3 a 12).`); return; }\n    c[k] = val.trim();\n  };\n\n  if ('proveedor' in cuerpo) comoTexto('proveedor', { nulo: false, max: 200 });\n  if ('nif' in cuerpo) { comoTexto('nif', { max: 30 }); if (c.nif) c.nif = normalizarNif(c.nif); }\n  if ('numero' in cuerpo) comoTexto('numero', { max: 100 });\n  if ('fecha_emision' in cuerpo) comoFecha('fecha_emision', { nulo: false });\n  if ('fecha_vencimiento' in cuerpo) comoFecha('fecha_vencimiento');\n  if ('fecha_operacion' in cuerpo) comoFecha('fecha_operacion');\n  for (const k of ['base', 'iva_tipo', 'iva_cuota', 'base_exenta', 'irpf_tipo', 'irpf_cuota', 'suplidos']) if (k in cuerpo) comoImporte(k);\n  if ('total' in cuerpo) comoImporte('total', { nulo: false });\n  if ('moneda' in cuerpo) {\n    const val = cuerpo.moneda;\n    if (typeof val !== 'string' || !/^[A-Za-z]{3}$/.test(val.trim())) errTipos.push('\"moneda\" debe ser un código ISO 4217 de 3 letras (p. ej. EUR).');\n    else c.moneda = val.trim().toUpperCase();\n  }\n  if ('metodo_pago' in cuerpo) { comoTexto('metodo_pago', { max: 50 }); if (c.metodo_pago) c.metodo_pago = normalizarMetodoPago(c.metodo_pago); }\n  if ('categoria' in cuerpo) {\n    if (typeof cuerpo.categoria !== 'string' || !categorias.includes(cuerpo.categoria)) errTipos.push('\"categoria\" debe ser una categoría activa de fact_categorias (GET /categorias).');\n    else c.categoria = cuerpo.categoria;\n  }\n  if ('subcategoria' in cuerpo) comoTexto('subcategoria', { max: 100 });\n  if ('tipo_gasto' in cuerpo) comoEnum('tipo_gasto', TIPOS);\n  if ('periodicidad' in cuerpo) comoEnum('periodicidad', PERIODOS, { nulo: true });\n  if ('estado' in cuerpo) {\n    if (cuerpo.estado === 'borrada' && !enLote) errTipos.push('\"estado\" no puede ser \"borrada\": usa DELETE /facturas/:id.');\n    else comoEnum('estado', enLote ? [...ESTADOS, 'borrada'] : ESTADOS);\n  }\n  if ('cliente_id' in cuerpo) {\n    const n = typeof cuerpo.cliente_id === 'number' ? cuerpo.cliente_id : (typeof cuerpo.cliente_id === 'string' && /^\\d+$/.test(cuerpo.cliente_id.trim()) ? Number(cuerpo.cliente_id) : NaN);\n    if (!clientes.some((x) => x.id === n && x.activo !== false)) errTipos.push('\"cliente_id\" debe ser el id de un cliente activo (GET /clientes).');\n    else c.cliente_id = n;\n  }\n  if ('tipo_factura' in cuerpo) comoEnum('tipo_factura', TIPOS_FACTURA);\n  if ('rectifica_numero' in cuerpo) comoTexto('rectifica_numero', { max: 100 });\n  if ('operacion' in cuerpo) comoEnum('operacion', OPERACIONES, { nulo: true });\n  if ('desglose_iva_json' in cuerpo) {\n    let arr = cuerpo.desglose_iva_json;\n    if (typeof arr === 'string') { try { arr = JSON.parse(arr); } catch (e) { arr = undefined; } }\n    if (!Array.isArray(arr) || arr.length > 10) errTipos.push('\"desglose_iva_json\" debe ser una lista (o su JSON) de hasta 10 líneas {base, tipo_iva, cuota_iva, tipo_re?, cuota_re?}.');\n    else {\n      const malas = arr.filter((l) => !l || typeof l !== 'object' || !esNumero(l.base) || !esNumero(l.tipo_iva) || !esNumero(l.cuota_iva)\n        || (l.tipo_re !== undefined && l.tipo_re !== null && !esNumero(l.tipo_re)) || (l.cuota_re !== undefined && l.cuota_re !== null && !esNumero(l.cuota_re)));\n      if (malas.length) errTipos.push('\"desglose_iva_json\": cada línea necesita base, tipo_iva y cuota_iva numéricos (punto decimal); tipo_re y cuota_re, numéricos o null.');\n      else c.desglose = arr.map((l) => ({ base: num(Number(l.base)), tipo_iva: num(Number(l.tipo_iva)), cuota_iva: num(Number(l.cuota_iva)), tipo_re: num(l.tipo_re === null || l.tipo_re === undefined ? 0 : Number(l.tipo_re)), cuota_re: num(l.cuota_re === null || l.cuota_re === undefined ? 0 : Number(l.cuota_re)) }));\n    }\n  }\n  if ('cuenta_gasto' in cuerpo) comoCuenta('cuenta_gasto');\n  if ('cuenta_proveedor' in cuerpo) comoCuenta('cuenta_proveedor');\n  if ('deducible' in cuerpo) comoEnum('deducible', DEDUCIBLES, { nulo: true });\n  if ('estado_pago' in cuerpo) comoEnum('estado_pago', ESTADOS_PAGO);\n  if ('fecha_pago' in cuerpo) comoFecha('fecha_pago');\n  if (errTipos.length) return malo(422, 'Datos no válidos.', errTipos);\n\n  // --- fusión ---\n  const nueva = { ...actual };\n  for (const k of Object.keys(c)) if (k !== 'desglose') nueva[k] = c[k];\n  if (nueva.tipo_gasto === 'puntual') nueva.periodicidad = null;\n  else if ('periodicidad' in c && c.periodicidad === null) errTipos.push('Una suscripción o contrato necesita \"periodicidad\".');\n  if ('proveedor' in c) nueva.proveedor_norm = normalizarProveedor(nueva.proveedor);\n\n  // Desglose: el enviado; o, si se corrigen base/iva_tipo/iva_cuota, el de una sola línea.\n  let desglose = desgloseDe(actual);\n  let baseExenta = 'base_exenta' in c ? (c.base_exenta || 0) : (num(actual.base_exenta) || 0);\n  if (c.desglose) desglose = c.desglose;\n  else if ('base' in c || 'iva_tipo' in c || 'iva_cuota' in c) {\n    if (desglose.length > 1) errTipos.push('La factura tiene varios tipos de IVA: corrige \"desglose_iva_json\" en lugar de base/iva_tipo/iva_cuota.');\n    else {\n      const l = desglose[0] || null;\n      const nb = 'base' in c ? c.base : actual.base;\n      const nt = 'iva_tipo' in c ? c.iva_tipo : (l ? l.tipo_iva : actual.iva_tipo);\n      const nc = 'iva_cuota' in c ? c.iva_cuota : (l ? l.cuota_iva : actual.iva_cuota);\n      if ((nt !== null && nt !== 0) || (nc !== null && nc !== 0)) {\n        desglose = [{ base: nb === null || nb === undefined ? null : r2(cent(nb) - cent(baseExenta)), tipo_iva: nt, cuota_iva: nc, tipo_re: l ? l.tipo_re : 0, cuota_re: l ? l.cuota_re : 0 }];\n      } else { desglose = []; baseExenta = nb === null || nb === undefined ? 0 : nb; }\n    }\n  }\n  if (nueva.estado_pago === 'pendiente' && 'estado_pago' in c && 'fecha_pago' in c && c.fecha_pago) errTipos.push('Una factura pendiente no puede tener \"fecha_pago\".');\n  if (errTipos.length) return malo(422, 'Datos no válidos.', errTipos);\n\n  // Pago: pagada sin fecha => hoy; pendiente => sin fecha; fecha sin estado => pagada.\n  if ('estado_pago' in c) {\n    if (c.estado_pago === 'pagada' && !('fecha_pago' in c) && !actual.fecha_pago) nueva.fecha_pago = hoy;\n    if (c.estado_pago === 'pendiente') nueva.fecha_pago = null;\n  } else if ('fecha_pago' in c) nueva.estado_pago = c.fecha_pago ? 'pagada' : 'pendiente';\n\n  // Cliente (y nº de recepción si cambia de cliente)\n  const cliente = clientes.find((x) => x.id === nueva.cliente_id) || clientes.find((x) => x.nombre === 'Personal') || null;\n  const cambioCliente = 'cliente_id' in c && c.cliente_id !== actual.cliente_id;\n  if (cambioCliente) {\n    const anio = (fechaValida(nueva.fecha_emision) && nueva.fecha_emision <= hoy ? nueva.fecha_emision : hoy).slice(0, 4);\n    nueva.num_recepcion = siguienteRecepcion(filas, nueva.cliente_id, anio);\n  }\n\n  // Deducible forzado a mano (se conserva en siguientes correcciones hasta enviar deducible: null).\n  let forzado = null;\n  if ('deducible' in c) forzado = c.deducible ? { deducible: c.deducible, motivo: 'Manual: marcado a mano.' } : null;\n  else if (typeof actual.motivo_deducible === 'string' && actual.motivo_deducible.startsWith('Manual')) forzado = { deducible: actual.deducible, motivo: actual.motivo_deducible };\n\n  // Tipo de cambio: el nuevo del BCE si se pidió; si no, el guardado.\n  let tipoCambio = typeof actual.tipo_cambio === 'number' ? actual.tipo_cambio : null;\n  if (bcePedido && !enLote) tipoCambio = tipoCambioBce(typeof bceCsv === 'string' ? bceCsv : null, bcePedido.fecha);\n\n  const recalcIrpf = 'irpf_tipo' in c && !('irpf_cuota' in c);\n  const fx = completarFiscal({\n    nif: nueva.nif, destinatario_nif: nueva.destinatario_nif, numero: nueva.numero, categoria: nueva.categoria,\n    tipo_factura: nueva.tipo_factura, desglose, base_exenta: baseExenta, suplidos: nueva.suplidos,\n    irpf_tipo: nueva.irpf_tipo, irpf_cuota: recalcIrpf ? null : nueva.irpf_cuota, total: nueva.total,\n    moneda: nueva.moneda || 'EUR', tipo_cambio: tipoCambio, operacion: nueva.operacion || null, mencion: null, tipo_autorrepercusion: null,\n  }, cliente, forzado);\n  for (const k of ['nif', 'destinatario_nif', 'tipo_factura', 'operacion', 'desglose_iva_json', 'base_exenta', 'base', 'iva_tipo', 'iva_cuota', 'cuota_re', 'irpf_tipo', 'irpf_cuota', 'suplidos', 'total', 'total_a_pagar', 'cuota_autorrepercutida', 'nif_valido', 'moneda', 'tipo_cambio', 'total_eur', 'deducible', 'motivo_deducible', 'cuota_deducible']) nueva[k] = fx[k];\n  if (!nueva.fecha_operacion || ('fecha_emision' in c && actual.fecha_operacion === actual.fecha_emision && !('fecha_operacion' in c))) nueva.fecha_operacion = nueva.fecha_emision;\n\n  // Cuentas: la enviada; si cambia la categoría o el cliente, regla (cliente > global) > categoría > 629.\n  const cambioCategoria = 'categoria' in c && c.categoria !== actual.categoria;\n  if ('cuenta_gasto' in c) nueva.cuenta_gasto = c.cuenta_gasto;\n  else if (cambioCategoria || cambioCliente || !nueva.cuenta_gasto) nueva.cuenta_gasto = resolverCuenta(nueva.proveedor_norm, nueva.categoria, nueva.cliente_id, reglas, filasCategorias).cuenta_gasto;\n  if ('cuenta_proveedor' in c) nueva.cuenta_proveedor = c.cuenta_proveedor;\n  else if ('cuenta_gasto' in c || cambioCategoria || cambioCliente || !nueva.cuenta_proveedor) nueva.cuenta_proveedor = cuentaProveedor(nueva.cuenta_gasto);\n\n  // Revalidación (sin el umbral de confianza: la corrección manual sustituye a la lectura).\n  const previo = actual.estado;\n  let errores = [];\n  if (nueva.estado === 'borrada' && 'estado' in c) {\n    nueva.errores_validacion = actual.errores_validacion;\n  } else {\n    errores = validarFactura({ proveedor: nueva.proveedor, total: nueva.total, desglose: fx.desglose, base_exenta: fx.base_exenta, suplidos: fx.suplidos, irpf_cuota: fx.irpf_cuota, tipo_factura: fx.tipo_factura, fecha_emision: nueva.fecha_emision, moneda: fx.moneda, total_eur: fx.total_eur }, hoy);\n    if (errores.length) {\n      nueva.estado = 'revisar';\n      nueva.errores_validacion = errores.join(' | ');\n    } else {\n      if ('estado' in c) nueva.estado = c.estado;\n      else if (previo === 'revisar' || previo === 'borrada') nueva.estado = previo === 'borrada' ? 'borrada' : 'ok';\n      const dup = nueva.estado === 'posible_duplicada'\n        ? String(actual.errores_validacion || '').split(' | ').filter((m) => m.startsWith('Posible duplicada'))\n        : [];\n      nueva.errores_validacion = dup.length ? dup.join(' | ') : null;\n    }\n  }\n\n  if (cambioCategoria || ('subcategoria' in c && c.subcategoria !== actual.subcategoria)) nueva.origen_categoria = 'manual';\n  nueva.actualizado = ahora;\n\n  const fila = {};\n  for (const k of COLUMNAS) fila[k] = nueva[k] === undefined ? null : nueva[k];\n\n  // Regla aprendida (PATCH de una factura y de un lote): categoría y/o cuenta del proveedor para el cliente.\n  let regla = null;\n  if (nueva.proveedor_norm && (cambioCategoria || ('cuenta_gasto' in c && c.cuenta_gasto !== actual.cuenta_gasto))) {\n    regla = { proveedor_norm: nueva.proveedor_norm, cliente_id: nueva.cliente_id ?? null };\n    if (cambioCategoria) { regla.categoria = nueva.categoria; regla.subcategoria = nueva.subcategoria ?? null; }\n    if ('cuenta_gasto' in c) regla.cuenta_gasto = c.cuenta_gasto;\n    // Suministros (Luz, Gas, Agua, Telefonía e internet): el tipo se decide por el CONTENIDO de la factura, no por el proveedor\n    // (Endesa, Iberdrola o Energía XXI venden luz y gas), así que no se aprende regla de categoría; solo la cuenta si se envió.\n    if (regla.categoria !== undefined && ['Luz', 'Gas', 'Agua', 'Telefonía e internet'].includes(regla.categoria)) {\n      delete regla.categoria; delete regla.subcategoria;\n      if (!('cuenta_gasto' in regla)) regla = null;\n    }\n  }\n  // La fila en memoria se actualiza para que el siguiente del lote vea el nº de recepción asignado.\n  const idx = filas.indexOf(actual);\n  if (idx >= 0) filas[idx] = { ...nueva };\n  return { ok: true, id, fila, factura: { ...nueva }, regla, revalidacion: { estado_anterior: previo, estado: nueva.estado, errores } };\n};\n\nif (modo === 'uno') {\n  const r = procesar(v.id, v.body, false);\n  if (!r.ok) return [{ json: { _error: true, status: r.status, body: r.status === 404 ? { error: r.error, id: r.id } : { error: r.error, detalles: r.detalles } } }];\n  return [{ json: { _error: false, modo, id: r.id, fila: r.fila, factura: r.factura, regla: r.regla, revalidacion: r.revalidacion } }];\n}\n\n// Lote\nconst errores_lote = [];\nconst reglasLote = new Map();\nconst salida = [];\nfor (const p of v.peticiones) {\n  const r = procesar(p.id, p.cuerpo, true);\n  if (!r.ok) errores_lote.push({ id: p.id, error: r.detalles && r.detalles.length ? `${r.error} ${r.detalles.join(' ')}` : r.error });\n  else {\n    salida.push({ json: { _error: false, modo, id: r.id, fila: r.fila, factura: r.factura, regla: null, revalidacion: r.revalidacion, errores_lote } });\n    // Una sola regla por (cliente, proveedor) aunque haya varias facturas del proveedor en el lote.\n    if (r.regla) {\n      const clave = `${r.regla.cliente_id ?? ''}|${r.regla.proveedor_norm}`;\n      reglasLote.set(clave, { ...(reglasLote.get(clave) || {}), ...r.regla });\n    }\n  }\n}\nif (!salida.length) return [{ json: { _error: true, status: 200, body: { actualizadas: 0, errores: errores_lote, reglas: 0 } } }];\nconst reglas_lote = [...reglasLote.values()];\nfor (const s of salida) s.json.reglas_lote = reglas_lote;\nreturn salida;\n"
+        }
+      },
+      {
+        "id": "e0248979-47e7-4172-9a67-1293a657b06e",
+        "name": "¿PATCH correcto?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1440,
+          700
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "ok",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "2b5ea9a3-5b1e-40c6-b989-9e9cd1bb24c2",
+        "name": "PATCH: preparar fila",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1680,
+          640
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Fila exacta para fact_facturas (autoMapInputData); una por factura (en lote, varias).\n// El id va en el filtro de «PATCH: guardar factura» por pairedItem.\nreturn $input.all().map((it, i) => ({ json: it.json.fila, pairedItem: { item: i } }));\n"
+        }
+      },
+      {
+        "id": "e005e4ce-03e7-4263-8a24-33534fb60db4",
+        "name": "PATCH: guardar factura",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1920,
+          640
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $('PATCH: revalidar y fusionar').item.json.id }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "autoMapInputData",
+            "value": {},
+            "matchingColumns": [],
+            "schema": []
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "b38022ad-7109-4183-9b7c-a9fad2b18aa2",
+        "name": "¿Cambió la categoría?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2160,
+          640
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "regla",
+                "leftValue": "={{ (() => { const p = $('PATCH: revalidar y fusionar').first().json; return !!p.regla || (Array.isArray(p.reglas_lote) && p.reglas_lote.length > 0); })() }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "0c736907-30f4-4d5d-aa65-d8b62bcb38a1",
+        "name": "PATCH: calcular regla",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2640,
+          560
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Regla aprendida por cliente: proveedor_norm + cliente_id -> categoría/subcategoría y/o\n// cuenta_gasto (lo que no cambia se conserva de la regla existente), usos + 1.\n// PATCH de una factura: una regla. Lote: una por (cliente, proveedor) (reglas_lote).\nconst p = $('PATCH: revalidar y fusionar').first().json;\nconst nuevas = p.modo === 'lote' ? (p.reglas_lote || []) : (p.regla ? [p.regla] : []);\nconst reglasBd = $('PATCH: leer reglas').all().map((i) => i.json);\nconst tiene = (r, k) => Object.prototype.hasOwnProperty.call(r, k);\nreturn nuevas.map((r) => {\n  const existente = reglasBd.find((x) => x && x.proveedor_norm === r.proveedor_norm && (x.cliente_id ?? null) === (r.cliente_id ?? null));\n  const usos = (Number(existente && existente.usos) || 0) + 1;\n  return { json: {\n    proveedor_norm: r.proveedor_norm,\n    cliente_id: r.cliente_id ?? null,\n    categoria: tiene(r, 'categoria') ? r.categoria : (existente ? existente.categoria ?? null : null),\n    subcategoria: tiene(r, 'categoria') ? (r.subcategoria ?? null) : (existente ? existente.subcategoria ?? null : null),\n    cuenta_gasto: tiene(r, 'cuenta_gasto') ? r.cuenta_gasto : (existente ? existente.cuenta_gasto ?? null : null),\n    usos,\n  } };\n});\n"
+        }
+      },
+      {
+        "id": "ca83b17e-b615-4313-a9df-f839a7f9d357",
+        "name": "PATCH: guardar regla",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          2880,
+          560
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "upsert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "oQBEGmTUhFU6mN8i",
+            "cachedResultName": "fact_reglas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "proveedor_norm",
+                "condition": "eq",
+                "keyValue": "={{ $json.proveedor_norm }}"
+              },
+              {
+                "keyName": "cliente_id",
+                "condition": "eq",
+                "keyValue": "={{ $json.cliente_id }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "autoMapInputData",
+            "value": {},
+            "matchingColumns": [],
+            "schema": []
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "be6cbb5c-4948-457c-8eea-3c8a48f5bf04",
+        "name": "PATCH: respuesta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3120,
+          700
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Una factura: {factura, revalidacion, regla}. Lote: {actualizadas, errores:[{id, error}], reglas}.\nconst items = $('PATCH: revalidar y fusionar').all().map((i) => i.json);\nconst p = items[0];\nif (p.modo === 'lote') {\n  const reglas = $('PATCH: guardar regla').isExecuted ? $('PATCH: guardar regla').all().length : 0;\n  return [{ json: { status: 200, body: { actualizadas: $('PATCH: guardar factura').all().length, errores: p.errores_lote || [], reglas } } }];\n}\nconst guardada = $('PATCH: guardar factura').first().json;\nconst factura = { ...p.factura, ...(guardada && guardada.id === p.id ? guardada : {}) };\nconst regla = p.regla ? { ...p.regla, guardada: $('PATCH: guardar regla').isExecuted } : null;\nreturn [{ json: { status: 200, body: { factura, revalidacion: p.revalidacion, regla } } }];\n"
+        }
+      },
+      {
+        "id": "328bb7c4-68e3-445f-ac56-6e7b39c81596",
+        "name": "DELETE /facturas/:id",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          1060
+        ],
+        "parameters": {
+          "httpMethod": "DELETE",
+          "path": ":id",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "webhookId": "facturas",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        }
+      },
+      {
+        "id": "dd61eb03-e9cb-4ff2-9d31-7c00014c3ebe",
+        "name": "DELETE: validar id",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          1060
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Valida el id (entero positivo) de /facturas/:id o de /facturas?id=N (la\n// variante ?id= existe porque el preflight CORS de n8n 2.42 solo anuncia un\n// método en rutas dinámicas). Sirve para PATCH y DELETE; pasa el cuerpo.\nconst w = $input.first().json;\nconst raw = String((w.params && w.params.id) ?? (w.query && w.query.id) ?? '').trim();\nif (!/^\\d{1,12}$/.test(raw) || Number(raw) < 1) {\n  return [{ json: { _error: true, status: 400, body: { error: 'Parámetros no válidos.', detalles: ['El id de la factura debe ser un entero positivo (/facturas/:id o /facturas?id=N).'] } } }];\n}\nreturn [{ json: { _error: false, id: Number(raw), body: w.body } }];\n"
+        }
+      },
+      {
+        "id": "98629998-8257-4840-9e7f-b9f5b42f7eda",
+        "name": "¿DELETE id válido?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          480,
+          1060
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "ok",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "79d050b7-10b5-4f14-8def-aa264d9ae8f4",
+        "name": "DELETE: leer factura",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          720,
+          1000
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $json.id }}"
+              }
+            ]
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "af5c2280-31d0-45db-8c5e-e88a5fd45fa7",
+        "name": "DELETE: preparar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          960,
+          1000
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// DELETE /facturas/:id: borrado lógico (estado = borrada). 404 si no existe.\nconst id = $('DELETE: validar id').first().json.id;\nconst f = $input.all().map((i) => i.json).find((x) => x && x.id === id && x.usuario_id === 'default');\nif (!f) return [{ json: { _error: true, status: 404, body: { error: 'Factura no encontrada.', id } } }];\nconst ahora = $now.setZone('Europe/Madrid').toISO();\nreturn [{ json: { _error: false, id, ya_borrada: f.estado === 'borrada', cambios: { estado: 'borrada', actualizado: ahora }, factura: { ...f, estado: 'borrada', actualizado: ahora } } }];\n"
+        }
+      },
+      {
+        "id": "48ddf674-a99f-464b-a752-98ed61767304",
+        "name": "¿DELETE existe?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1200,
+          1000
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "ok",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "a047f159-d793-4fc7-8381-bbcb406a0067",
+        "name": "DELETE: marcar borrada",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1440,
+          940
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $json.id }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "estado": "borrada",
+              "actualizado": "={{ $json.cambios.actualizado }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "estado",
+                "displayName": "estado",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "actualizado",
+                "displayName": "actualizado",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "1c50c648-af8b-40ad-b465-12b0226c581f",
+        "name": "DELETE: respuesta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1680,
+          940
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const p = $('DELETE: preparar').first().json;\nreturn [{ json: { status: 200, body: { factura: p.factura, ya_borrada: p.ya_borrada } } }];\n"
+        }
+      },
+      {
+        "id": "c5f0de50-15de-4a6b-a490-1a22b6520b8d",
+        "name": "Nota API",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          0,
+          -420
+        ],
+        "parameters": {
+          "content": "## FACT — API\nTodos los webhooks: Header Auth `X-API-Key` (FACT API Key) y la misma lista CORS que la Ingesta.\n\n- GET /facturas (filtros + q, cliente_id, deducible, estado_pago, vencidas, tipo_factura, orden) · GET /resumen (cliente_id; totales en EUR con total_eur; excluidas_sin_cambio) · GET /categorias: TODO se calcula en Code.\n- PATCH /facturas/:id, /facturas?id=N y /facturas/lote: lista blanca, tipos (400/422), recálculo fiscal y revalidación con el bloque COMÚN de la Ingesta (BCE si cambia la moneda o la fecha); regla por cliente si cambia la categoría o la cuenta.\n- GET/POST /clientes y PATCH /clientes?id=N (fact_clientes; NIF con dígito de control, bloque COMÚN).\n- DELETE /facturas/:id: borrado lógico (estado = borrada).\n- GET /archivo?id=N: original de la factura con su propio «Responder archivo».\n\nRutas con :id: el webhook tiene webhookId = \"facturas\" y path \":id\" para que la URL sea /webhook/facturas/:id.\nLas respuestas JSON pasan por «Responder» con {status, body}.",
+          "color": 7,
+          "width": 900,
+          "height": 360
+        }
+      },
+      {
+        "id": "cb9d4f08-7c9d-4bb7-816e-f1827d94d1d7",
+        "name": "PATCH /facturas?id",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          880
+        ],
+        "parameters": {
+          "httpMethod": "PATCH",
+          "path": "facturas",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        },
+        "webhookId": "4bb88420-af14-48d5-8a7d-ee08e3e32617"
+      },
+      {
+        "id": "a1c59352-d3c9-495b-9c1d-9ab95df58c38",
+        "name": "DELETE /facturas?id",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          1180
+        ],
+        "parameters": {
+          "httpMethod": "DELETE",
+          "path": "facturas",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        },
+        "webhookId": "fd306671-de68-481f-a41d-5bc357d248d3"
+      },
+      {
+        "id": "82001374-25c4-4611-9af4-9b43c38fada4",
+        "name": "GET /archivo",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          1400
+        ],
+        "parameters": {
+          "httpMethod": "GET",
+          "path": "archivo",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        },
+        "webhookId": "846c60a7-6fea-4a49-89db-77d84a88c053"
+      },
+      {
+        "id": "1d50f04b-d7b1-43cc-9706-970fd8387897",
+        "name": "Archivo: validar id",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          1400
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// GET /archivo?id=N: valida el id (entero positivo). Ruta estática para que el\n// preflight CORS funcione (n8n 2.42 limita las rutas dinámicas).\nconst w = $input.first().json;\nconst raw = String((w.query && w.query.id) ?? '').trim();\nif (!/^\\d{1,12}$/.test(raw) || Number(raw) < 1) {\n  return [{ json: { _error: true, status: 400, body: { error: 'Parámetros no válidos.', detalles: ['El id de la factura debe ser un entero positivo (/archivo?id=N).'] } } }];\n}\nreturn [{ json: { _error: false, id: Number(raw) } }];\n"
+        }
+      },
+      {
+        "id": "972e40f6-8572-43cc-954c-e8d665ee4205",
+        "name": "¿Archivo id válido?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          480,
+          1400
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "ok",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "ffa76ebf-b794-4ac6-af5d-ad2d10dd43f5",
+        "name": "Archivo: leer factura",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          720,
+          1340
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "7PLB3ZEQRDVYx6iD",
+            "cachedResultName": "fact_facturas"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $json.id }}"
+              }
+            ]
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "a2e064b0-55e4-42ab-9ebc-b4aeb96a9138",
+        "name": "Archivo: comprobar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          960,
+          1340
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// GET /archivo: 404 si no existe o está borrada; 400 si la ruta guardada no está\n// dentro del almacén (prefijo fijo, sin '..', solo caracteres seguros: evita\n// salir del almacén y que la ruta se interprete como patrón glob).\nconst id = $('Archivo: validar id').first().json.id;\nconst f = $input.all().map((i) => i.json).find((x) => x && x.id === id && x.usuario_id === 'default');\nif (!f || f.estado === 'borrada') return [{ json: { _error: true, status: 404, body: { error: 'Factura no encontrada.', id } } }];\nconst BASE = '/home/node/.n8n-files/facturas/';\nconst ruta = String(f.archivo_ruta || '');\nif (!ruta.startsWith(BASE) || ruta.includes('..') || !/^[A-Za-z0-9._\\/-]+$/.test(ruta)) {\n  return [{ json: { _error: true, status: 400, body: { error: 'Ruta de archivo no válida.', id } } }];\n}\nconst mime = /^[a-z0-9.+-]+\\/[a-z0-9.+-]+$/i.test(String(f.mime || '')) ? f.mime : 'application/octet-stream';\nreturn [{ json: { _error: false, id, ruta, mime } }];\n"
+        }
+      },
+      {
+        "id": "f8083fb8-c2c4-48cc-bb13-e1e31ee13ea1",
+        "name": "¿Archivo ruta válida?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1200,
+          1340
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "ok",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "569fd9d8-844a-44b8-b09e-2455e3313c35",
+        "name": "Archivo: leer disco",
+        "type": "n8n-nodes-base.readWriteFile",
+        "typeVersion": 1.1,
+        "position": [
+          1440,
+          1280
+        ],
+        "parameters": {
+          "operation": "read",
+          "fileSelector": "={{ $json.ruta }}",
+          "options": {
+            "mimeType": "={{ $json.mime }}",
+            "dataPropertyName": "data"
+          }
+        },
+        "onError": "continueRegularOutput",
+        "alwaysOutputData": true
+      },
+      {
+        "id": "fe068463-4b97-45e7-98f1-0e1c0f215940",
+        "name": "Archivo: preparar respuesta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1680,
+          1280
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// GET /archivo: si el archivo no está en disco, 404 JSON; si está, pasa el binario.\nconst meta = $('Archivo: comprobar').first().json;\nconst it = $input.all().find((i) => i.binary && i.binary.data);\nif (!it) return [{ json: { _error: true, status: 404, body: { error: 'Archivo no encontrado en disco.', id: meta.id } } }];\nreturn [{ json: { _error: false, id: meta.id, mime: meta.mime }, binary: { data: it.binary.data } }];\n"
+        }
+      },
+      {
+        "id": "298c97c6-c77d-43b9-893b-e84dd35bcd5a",
+        "name": "¿Archivo en disco?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1920,
+          1280
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "ok",
+                "leftValue": "={{ $json._error }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "822e2910-dd52-4466-8877-aa7533226f00",
+        "name": "Responder archivo",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          2160,
+          1220
+        ],
+        "parameters": {
+          "respondWith": "binary",
+          "responseDataSource": "set",
+          "inputFieldName": "data",
+          "options": {
+            "responseCode": 200,
+            "responseHeaders": {
+              "entries": [
+                {
+                  "name": "Content-Type",
+                  "value": "={{ $json.mime }}"
+                },
+                {
+                  "name": "Content-Disposition",
+                  "value": "inline"
+                },
+                {
+                  "name": "Cache-Control",
+                  "value": "private, max-age=3600"
+                },
+                {
+                  "name": "Access-Control-Expose-Headers",
+                  "value": "Content-Type"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": "16d40962-662d-4b95-a8c8-76bfd8732ba1",
+        "name": "PATCH: leer clientes",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          960,
+          560
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "vFk59qcLmkSdGzZg",
+            "cachedResultName": "fact_clientes"
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true,
+        "executeOnce": true
+      },
+      {
+        "id": "a4e732b1-4436-4333-8620-acd19269dbe9",
+        "name": "PATCH: leer reglas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1080,
+          560
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "oQBEGmTUhFU6mN8i",
+            "cachedResultName": "fact_reglas"
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true,
+        "executeOnce": true
+      },
+      {
+        "id": "30c23ce7-cca3-4054-9b1f-25d71b89fec2",
+        "name": "PATCH: preparar cambio",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          960,
+          900
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// ¿Hace falta el tipo de cambio del BCE? Solo en PATCH de una factura cuya moneda final\n// no es EUR y cambia la moneda o la fecha de emisión, o aún no tiene tipo de cambio.\n// Al BCE solo se envían la moneda y la fecha.\nconst v = $('PATCH: validar id').isExecuted ? $('PATCH: validar id').first().json : null;\nconst sin = [{ json: { bce: null } }];\nif (!v || v.modo !== 'uno') return sin;\nconst cuerpo = v.body && typeof v.body === 'object' && !Array.isArray(v.body) ? v.body : {};\nconst actual = $('PATCH: leer factura').all().map((i) => i.json).find((x) => x && x.id === v.id);\nif (!actual) return sin;\nconst moneda = typeof cuerpo.moneda === 'string' && /^[A-Za-z]{3}$/.test(cuerpo.moneda.trim()) ? cuerpo.moneda.trim().toUpperCase() : (actual.moneda || 'EUR');\nconst fechaOk = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && DateTime.fromISO(s).isValid;\nconst fecha = fechaOk(cuerpo.fecha_emision) ? cuerpo.fecha_emision : actual.fecha_emision;\nif (moneda === 'EUR') return sin;\nconst cambia = moneda !== actual.moneda || fecha !== actual.fecha_emision || !(typeof actual.tipo_cambio === 'number' && actual.tipo_cambio > 0);\nif (!cambia) return sin;\nconst hoy = $now.setZone('Europe/Madrid').toISODate();\nconst fin = fechaOk(fecha) && fecha <= hoy ? fecha : hoy;\nreturn [{ json: { bce: { moneda, fecha: fin, desde: DateTime.fromISO(fin).minus({ days: 7 }).toISODate() } } }];\n"
+        }
+      },
+      {
+        "id": "3247b6a3-1de5-4373-bdb8-47416909452a",
+        "name": "¿PATCH necesita BCE?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1080,
+          980
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "bce",
+                "leftValue": "={{ $json.bce }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "object",
+                  "operation": "exists",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "a93b3b55-aaa8-4203-8048-5dfa8f0d1546",
+        "name": "PATCH: BCE tipo de cambio",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1140,
+          1060
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "=https://data-api.ecb.europa.eu/service/data/EXR/D.{{ $json.bce.moneda }}.EUR.SP00.A",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "startPeriod",
+                "value": "={{ $json.bce.desde }}"
+              },
+              {
+                "name": "endPeriod",
+                "value": "={{ $json.bce.fecha }}"
+              },
+              {
+                "name": "format",
+                "value": "csvdata"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000,
+            "response": {
+              "response": {
+                "responseFormat": "text",
+                "outputPropertyName": "data"
+              }
+            }
+          }
+        },
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 2000
+      },
+      {
+        "id": "c4d0773d-c3fb-4a6e-86eb-97157b40d358",
+        "name": "PATCH /facturas/lote",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          1120
+        ],
+        "parameters": {
+          "httpMethod": "PATCH",
+          "path": "facturas/lote",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        },
+        "webhookId": "8c463d72-bd22-4b20-a954-52db334b64a7"
+      },
+      {
+        "id": "f7350bd1-7a3e-4e47-8dfa-de6251586a93",
+        "name": "Lote: validar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          1120
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// PATCH /facturas/lote: {ids:[…], cambios:{categoria?, cuenta_gasto?, estado_pago?, fecha_pago?, cliente_id?, estado?}}\n// Máximo 500 ids. Los cambios se validan y aplican factura a factura en «PATCH: revalidar y fusionar».\nconst w = $input.first().json;\nconst b = w.body;\nconst fallo = (detalles) => [{ json: { _error: true, status: 400, body: { error: 'Parámetros no válidos.', detalles } } }];\nconst PERMITIDOS = ['categoria', 'cuenta_gasto', 'estado_pago', 'fecha_pago', 'cliente_id', 'estado'];\nif (!b || typeof b !== 'object' || Array.isArray(b)) return fallo(['El cuerpo debe ser un objeto JSON {ids, cambios}.']);\nif (!Array.isArray(b.ids) || !b.ids.length) return fallo(['\"ids\" debe ser una lista no vacía de ids de factura.']);\nif (b.ids.length > 500) return fallo(['Como máximo 500 ids por petición.']);\nconst ids = [];\nfor (const x of b.ids) {\n  const n = typeof x === 'number' ? x : (typeof x === 'string' && /^\\d{1,12}$/.test(x.trim()) ? Number(x) : NaN);\n  if (!Number.isInteger(n) || n < 1) return fallo(['Cada id debe ser un entero positivo.']);\n  if (!ids.includes(n)) ids.push(n);\n}\nconst c = b.cambios;\nif (!c || typeof c !== 'object' || Array.isArray(c) || !Object.keys(c).length) return fallo(['\"cambios\" debe ser un objeto con al menos un campo.']);\nconst fuera = Object.keys(c).filter((k) => !PERMITIDOS.includes(k));\nif (fuera.length) return fallo([`No se pueden cambiar en lote: ${fuera.join(', ')}. Permitidos: ${PERMITIDOS.join(', ')}.`]);\nreturn [{ json: { _error: false, modo: 'lote', peticiones: ids.map((id) => ({ id, cuerpo: c })) } }];\n"
+        }
+      },
+      {
+        "id": "cd9147a2-8274-4744-bee1-3dc5b106ae7e",
+        "name": "GET /clientes",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          1700
+        ],
+        "parameters": {
+          "httpMethod": "GET",
+          "path": "clientes",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        },
+        "webhookId": "d540d22b-4b96-4b68-9815-dcbf6f7aad87"
+      },
+      {
+        "id": "6bd445de-a1fb-47dc-9220-cedf007d677e",
+        "name": "POST /clientes",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          1820
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "clientes",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        },
+        "webhookId": "ac8fcc5c-c466-4b3a-9c25-0e9928baba37"
+      },
+      {
+        "id": "cdb482c7-accc-4931-903e-9ab70fd588bd",
+        "name": "PATCH /clientes",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          1940
+        ],
+        "parameters": {
+          "httpMethod": "PATCH",
+          "path": "clientes",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        },
+        "webhookId": "93507220-6548-4c3b-997d-3143ef85c711"
+      },
+      {
+        "id": "5f8f2752-f5d3-4aee-a6fa-f810359474a9",
+        "name": "Clientes: leer",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          240,
+          1820
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "vFk59qcLmkSdGzZg",
+            "cachedResultName": "fact_clientes"
+          },
+          "returnAll": true
+        },
+        "alwaysOutputData": true
+      },
+      {
+        "id": "56cefbcc-d36d-4c21-98f3-f01907dfd152",
+        "name": "Clientes: procesar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          1820
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// GET /clientes, POST /clientes y PATCH /clientes?id=N (fact_clientes).\n// Salida: {accion: 'responder'|'insertar'|'actualizar', status, body, id?, fila?}.\n// NIF: normalizado (sin «ES», mayúsculas) y con dígito de control válido (bloque COMÚN);\n// vacío solo en clientes «particular». 422 si no es válido o ya lo tiene otro cliente.\nconst metodo = $('POST /clientes').isExecuted ? 'POST' : $('PATCH /clientes').isExecuted ? 'PATCH' : 'GET';\nconst w = (metodo === 'POST' ? $('POST /clientes') : metodo === 'PATCH' ? $('PATCH /clientes') : $('GET /clientes')).first().json;\nconst filas = $input.all().map((i) => i.json).filter((c) => c && c.id !== undefined && c.id !== null);\nconst publico = (c) => ({ id: c.id, nombre: c.nombre, nif: c.nif ?? '', regimen_iva: c.regimen_iva, prorrata_pct: c.prorrata_pct ?? 100, activo: c.activo !== false });\nconst responder = (status, body) => [{ json: { accion: 'responder', status, body } }];\n\n// === COMÚN Ingesta/API: inicio ===\n// Bloque idéntico en FACT — Ingesta («Interpretar y validar») y FACT — API\n// («PATCH: revalidar y fusionar»). Si cambias algo aquí, cámbialo en ambos.\n// Todas las cifras en céntimos enteros. Diseño: docs/diseno-gestoria.md §2.\nconst num = (x) => {\n  if (x === null || x === undefined || x === '') return null;\n  let v = x;\n  if (typeof v === 'string') {\n    v = v.replace(/[^0-9,.\\-]/g, '');\n    if (v.includes(',') && v.includes('.')) v = v.lastIndexOf(',') > v.lastIndexOf('.') ? v.replace(/\\./g, '').replace(',', '.') : v.replace(/,/g, '');\n    else v = v.replace(',', '.');\n    v = Number(v);\n  }\n  return typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100) / 100 : null;\n};\nconst cent = (x) => Math.round(x * 100);\nconst fechaValida = (s) => {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return false;\n  const [y, m, dd] = s.split('-').map(Number);\n  const dt = new Date(Date.UTC(y, m - 1, dd));\n  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === dd && y >= 1990;\n};\nconst txtOrNull = (s) => (typeof s === 'string' && s.trim() ? s.trim() : null);\n// Método de pago: primera letra en mayúscula y el resto como venga («tarjeta» → «Tarjeta», «PayPal» igual).\nconst normalizarMetodoPago = (s) => { const t = txtOrNull(s); return t ? t.charAt(0).toLocaleUpperCase('es-ES') + t.slice(1) : null; };\nconst SUFIJOS = new Set(['sa', 'sau', 'sl', 'slu', 'sll', 'slne', 'scoop', 'sc', 'cb', 'bv', 'nv', 'ab', 'ltd', 'limited', 'inc', 'llc', 'gmbh', 'ag', 'plc', 'corp', 'corporation', 'spa', 'srl', 'sas', 'sarl', 'oy', 'aps', 'as', 'unipersonal', 'co']);\nconst normalizarProveedor = (s) => {\n  if (!s) return null;\n  let t = s.normalize('NFD').replace(/\\p{M}/gu, '').toLowerCase().replace(/\\./g, '').replace(/[^a-z0-9]+/g, ' ').trim();\n  const w = t.split(' ').filter(Boolean);\n  while (w.length > 1 && SUFIJOS.has(w[w.length - 1])) w.pop();\n  return w.join(' ') || null;\n};\nconst r2 = (c) => Math.round(c) / 100; // céntimos -> euros\n\n// --- NIF: normalizado (mayúsculas, sin espacios/guiones/puntos, sin «ES» delante de un NIF español) ---\nconst PAISES_UE = new Set(['AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'EL', 'GR', 'FI', 'FR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK', 'XI']);\nconst LETRAS_DNI = 'TRWAGMYFPDXBNJZSQVHLCKE';\nconst normalizarNif = (s) => {\n  if (s === null || s === undefined) return null;\n  let v = String(s).toUpperCase().replace(/[\\s.\\-\\/]/g, '');\n  if (/^ES[0-9A-Z]\\d{7}[0-9A-Z]$/.test(v)) v = v.slice(2);\n  return v || null;\n};\n// 'ES' (forma de NIF español), 'UE' (prefijo de país UE distinto de ES), 'EXT' (resto: EIN, EU-OSS, otros países) o null.\nconst origenNif = (s) => {\n  const v = normalizarNif(s);\n  if (!v) return null;\n  if (/^(\\d|[A-Z]\\d)/.test(v)) return 'ES';\n  if (PAISES_UE.has(v.slice(0, 2))) return 'UE';\n  return 'EXT';\n};\n// true/false según el dígito de control (DNI, NIE, CIF y NIF K/L/M); null si no hay NIF o es extranjero.\nconst validarNif = (s) => {\n  const v = normalizarNif(s);\n  if (!v) return null;\n  if (origenNif(v) !== 'ES') return null;\n  if (/^\\d{8}[A-Z]$/.test(v)) return LETRAS_DNI[Number(v.slice(0, 8)) % 23] === v[8];\n  if (/^[XYZ]\\d{7}[A-Z]$/.test(v)) return LETRAS_DNI[Number('XYZ'.indexOf(v[0]) + v.slice(1, 8)) % 23] === v[8];\n  if (/^[ABCDEFGHJKLMNPQRSUVW]\\d{7}[0-9A-J]$/.test(v)) {\n    let suma = 0;\n    v.slice(1, 8).split('').map(Number).forEach((x, i) => {\n      if (i % 2 === 0) { const y = x * 2; suma += Math.floor(y / 10) + (y % 10); } else suma += x;\n    });\n    const ctrl = (10 - (suma % 10)) % 10;\n    const letra = 'JABCDEFGHI'[ctrl];\n    if ('KLMNPQRSW'.includes(v[0])) return v[8] === letra;\n    if ('ABEH'.includes(v[0])) return v[8] === String(ctrl);\n    return v[8] === String(ctrl) || v[8] === letra;\n  }\n  return false;\n};\n\n// --- Desglose de IVA: [{base, tipo_iva, cuota_iva, tipo_re, cuota_re}], una línea por tipo ---\n// Las líneas al 0 % sin cuota pasan a base_exenta.\nconst normalizarDesglose = (arr, baseExenta) => {\n  let exentaC = cent(num(baseExenta) || 0);\n  const lineas = [];\n  for (const l of Array.isArray(arr) ? arr : []) {\n    if (!l || typeof l !== 'object') continue;\n    const x = { base: num(l.base), tipo_iva: num(l.tipo_iva), cuota_iva: num(l.cuota_iva), tipo_re: num(l.tipo_re) || 0, cuota_re: num(l.cuota_re) || 0 };\n    if (x.base === null && x.cuota_iva === null) continue;\n    if ((x.tipo_iva === 0 || x.tipo_iva === null) && !x.cuota_iva && !x.cuota_re && x.base !== null) { exentaC += cent(x.base); continue; }\n    lineas.push(x);\n  }\n  return { desglose: lineas, base_exenta: r2(exentaC) };\n};\n// Campos de compatibilidad: base = Σ bases + exenta; iva_tipo = tipo de la base mayor; iva_cuota = Σ cuotas (sin recargo).\nconst derivarCompat = (desglose, baseExenta) => {\n  const exC = cent(baseExenta || 0);\n  if (!desglose.length && !exC) return { base: null, iva_tipo: null, iva_cuota: null, cuota_re: 0 };\n  if (desglose.some((l) => l.base === null || l.cuota_iva === null)) {\n    return { base: desglose.some((l) => l.base === null) ? null : r2(desglose.reduce((s, l) => s + cent(l.base), exC)), iva_tipo: desglose.length ? desglose[0].tipo_iva : 0, iva_cuota: null, cuota_re: r2(desglose.reduce((s, l) => s + cent(l.cuota_re || 0), 0)) };\n  }\n  let mayor = null;\n  for (const l of desglose) if (!mayor || Math.abs(l.base) > Math.abs(mayor.base)) mayor = l;\n  return {\n    base: r2(desglose.reduce((s, l) => s + cent(l.base), exC)),\n    iva_tipo: mayor ? mayor.tipo_iva : 0,\n    iva_cuota: r2(desglose.reduce((s, l) => s + cent(l.cuota_iva), 0)),\n    cuota_re: r2(desglose.reduce((s, l) => s + cent(l.cuota_re || 0), 0)),\n  };\n};\n\n// --- Operación y autorrepercusión ---\nconst OPERACIONES = ['interior', 'intracomunitaria', 'isp_nacional', 'extracomunitaria', 'importacion', 'exenta'];\nconst AUTORREPERCUTEN = ['intracomunitaria', 'isp_nacional', 'extracomunitaria'];\n// mencion: 'inversion_sujeto_pasivo' | 'reverse_charge' | 'intracomunitaria' | 'exenta' | 'no_sujeta' | 'ninguna' | null\nconst determinarOperacion = ({ nif, desglose, base_exenta, mencion }) => {\n  const sinIva = !desglose.some((l) => cent(l.cuota_iva || 0) !== 0);\n  const origen = origenNif(nif);\n  if (sinIva && (mencion === 'inversion_sujeto_pasivo' || (mencion === 'reverse_charge' && origen === 'ES'))) return 'isp_nacional';\n  if (sinIva && origen === 'UE') return 'intracomunitaria';\n  if (sinIva && origen === 'EXT') return 'extracomunitaria';\n  if (sinIva && cent(base_exenta || 0) !== 0) return 'exenta';\n  return 'interior';\n};\nconst calcularAutorrepercutida = (operacion, baseExenta, tipo) => (AUTORREPERCUTEN.includes(operacion)\n  ? r2(Math.round((cent(baseExenta || 0) * (typeof tipo === 'number' && tipo > 0 ? tipo : 21)) / 100))\n  : 0);\n\n// --- Deducibilidad (orden del diseño §2). cliente = fila de fact_clientes ---\nconst DEDUCIBLES = ['si', 'no', 'parcial', 'dudoso', 'na'];\nconst CATEGORIAS_DUDOSAS = ['Restaurantes y comida a domicilio', 'Viajes'];\nconst calcularDeducible = (f, cliente, forzado) => {\n  const regimen = (cliente && cliente.regimen_iva) || 'particular';\n  const prorrata = cliente && typeof cliente.prorrata_pct === 'number' && cliente.prorrata_pct >= 0 && cliente.prorrata_pct <= 100 ? cliente.prorrata_pct : 100;\n  const ivaC = f.desglose.reduce((s, l) => s + cent(l.cuota_iva || 0), 0) + cent(f.cuota_autorrepercutida || 0);\n  const cuotaCon = (pct) => r2(Math.round((ivaC * pct) / 100));\n  const res = (deducible, motivo) => ({\n    deducible,\n    motivo_deducible: motivo,\n    cuota_deducible: deducible === 'si' || deducible === 'parcial' ? cuotaCon(prorrata) : 0,\n  });\n  if (forzado && DEDUCIBLES.includes(forzado.deducible)) return res(forzado.deducible, forzado.motivo || 'Manual: marcado a mano.');\n  if (regimen === 'particular') return res('na', 'El cliente es un particular: no deduce IVA.');\n  if (regimen === 'recargo_equivalencia') return res('no', 'Cliente en recargo de equivalencia: no deduce el IVA soportado.');\n  if (f.tipo_factura === 'simplificada' && !f.destinatario_nif) return res('no', 'Factura simplificada sin NIF del destinatario.');\n  if (f.nif_valido === false) return res('no', 'NIF del proveedor no válido (subsanable: pide una factura corregida).');\n  if (!f.numero) return res('no', 'Falta el número de factura (subsanable).');\n  if (CATEGORIAS_DUDOSAS.includes(f.categoria)) return res('dudoso', 'Restauración o viajes: deducible solo si está afecto a la actividad.');\n  if (ivaC === 0) return res('na', 'Sin IVA soportado ni autorrepercutido.');\n  if (prorrata < 100) return res('parcial', `Deducible al ${prorrata} % (prorrata del cliente).`);\n  return res('si', AUTORREPERCUTEN.includes(f.operacion) ? 'Deducible: IVA autorrepercutido.' : 'Factura completa con los datos obligatorios.');\n};\n\n// --- Reglas y cuentas: regla del cliente > regla global > categoría.cuenta_pgc > 629 ---\nconst buscarRegla = (reglas, proveedorNorm, clienteId, campo) => {\n  if (!proveedorNorm) return null;\n  const tiene = (r) => r && r.proveedor_norm === proveedorNorm && txtOrNull(r[campo]);\n  return (reglas || []).find((r) => tiene(r) && r.cliente_id === clienteId)\n    || (reglas || []).find((r) => tiene(r) && (r.cliente_id === null || r.cliente_id === undefined))\n    || null;\n};\nconst resolverCuenta = (proveedorNorm, categoria, clienteId, reglas, categorias) => {\n  const regla = buscarRegla(reglas, proveedorNorm, clienteId, 'cuenta_gasto');\n  const cat = (categorias || []).find((c) => c && c.nombre === categoria);\n  const cuenta = (regla && txtOrNull(regla.cuenta_gasto)) || (cat && txtOrNull(cat.cuenta_pgc)) || '629';\n  return { cuenta_gasto: cuenta, cuenta_proveedor: cuentaProveedor(cuenta) };\n};\nconst cuentaProveedor = (cuenta) => (String(cuenta || '').startsWith('60') ? '400' : '410');\n\n// --- Moneda: tipo_cambio = EUR por 1 unidad (BCE); total_eur = total × tipo_cambio ---\nconst aplicarCambio = (f, tipoCambio) => {\n  if (!f.moneda || f.moneda === 'EUR') return { tipo_cambio: 1, total_eur: f.total };\n  if (typeof tipoCambio !== 'number' || !(tipoCambio > 0) || f.total === null) return { tipo_cambio: null, total_eur: null };\n  return { tipo_cambio: tipoCambio, total_eur: r2(Math.round(cent(f.total) * tipoCambio)) };\n};\n// CSV del BCE (format=csvdata): último OBS_VALUE con TIME_PERIOD <= fecha. Devuelve EUR por unidad (1/valor) o null.\nconst tipoCambioBce = (csv, fecha) => {\n  if (typeof csv !== 'string' || !csv.trim()) return null;\n  const lineas = csv.trim().split(/\\r?\\n/);\n  const cab = lineas[0].split(',');\n  const iT = cab.indexOf('TIME_PERIOD');\n  const iV = cab.indexOf('OBS_VALUE');\n  if (iT < 0 || iV < 0) return null;\n  let mejor = null;\n  for (const l of lineas.slice(1)) {\n    const c = l.split(',');\n    const v = Number(c[iV]);\n    if (/^\\d{4}-\\d{2}-\\d{2}$/.test(c[iT]) && c[iT] <= fecha && v > 0 && (!mejor || c[iT] > mejor.t)) mejor = { t: c[iT], v };\n  }\n  return mejor ? Math.round((1 / mejor.v) * 1e6) / 1e6 : null;\n};\n\n// --- Nº de recepción: siguiente correlativo del cliente en el año ---\nconst siguienteRecepcion = (filas, clienteId, anio) => {\n  const pre = `${anio}-`;\n  let max = 0;\n  for (const f of filas || []) {\n    if (f && f.cliente_id === clienteId && typeof f.num_recepcion === 'string' && f.num_recepcion.startsWith(pre)) {\n      const n = Number(f.num_recepcion.slice(pre.length));\n      if (Number.isFinite(n) && n > max) max = n;\n    }\n  }\n  return pre + String(max + 1).padStart(6, '0');\n};\n\n// --- Completa los campos fiscales derivados de una factura (Ingesta, PATCH y migración) ---\n// f: nif, destinatario_nif, numero, categoria, tipo_factura, desglose (array), base_exenta, suplidos,\n//    irpf_tipo, irpf_cuota, total, moneda, tipo_cambio, operacion (indicada o null), mencion, tipo_autorrepercusion.\nconst TIPOS_FACTURA = ['completa', 'simplificada', 'simplificada_cualificada', 'rectificativa'];\nconst completarFiscal = (f, cliente, forzado) => {\n  const nd = normalizarDesglose(f.desglose, f.base_exenta);\n  const total = num(f.total);\n  const compat = derivarCompat(nd.desglose, nd.base_exenta);\n  const tipo_factura = TIPOS_FACTURA.includes(f.tipo_factura) ? f.tipo_factura : 'completa';\n  let irpf_cuota = num(f.irpf_cuota);\n  const irpf_tipo = num(f.irpf_tipo) || 0;\n  if (irpf_cuota === null && irpf_tipo > 0) {\n    const baseIrpfC = nd.desglose.reduce((s, l) => s + cent(l.base || 0), 0);\n    irpf_cuota = r2(Math.round((baseIrpfC * irpf_tipo) / 100));\n  }\n  irpf_cuota = Math.abs(irpf_cuota || 0);\n  if (total !== null && total < 0) irpf_cuota = -irpf_cuota; // rectificativas: retención negativa\n  const nif = normalizarNif(f.nif);\n  const destinatario_nif = normalizarNif(f.destinatario_nif);\n  const operacion = OPERACIONES.includes(f.operacion) ? f.operacion\n    : determinarOperacion({ nif, desglose: nd.desglose, base_exenta: nd.base_exenta, mencion: f.mencion });\n  const cuota_autorrepercutida = calcularAutorrepercutida(operacion, nd.base_exenta, num(f.tipo_autorrepercusion));\n  const nif_valido = validarNif(nif);\n  const moneda = typeof f.moneda === 'string' && /^[A-Z]{3}$/.test(f.moneda) ? f.moneda : 'EUR';\n  const cambio = aplicarCambio({ moneda, total }, num(f.tipo_cambio) === null ? null : Number(f.tipo_cambio));\n  const base = {\n    nif,\n    destinatario_nif,\n    tipo_factura,\n    operacion,\n    desglose: nd.desglose,\n    desglose_iva_json: JSON.stringify(nd.desglose),\n    base_exenta: nd.base_exenta,\n    base: compat.base,\n    iva_tipo: compat.iva_tipo,\n    iva_cuota: compat.iva_cuota,\n    cuota_re: compat.cuota_re,\n    irpf_tipo,\n    irpf_cuota,\n    suplidos: num(f.suplidos) || 0,\n    total,\n    total_a_pagar: total === null ? null : r2(cent(total) - cent(irpf_cuota)),\n    cuota_autorrepercutida,\n    nif_valido,\n    moneda,\n    tipo_cambio: cambio.tipo_cambio,\n    total_eur: cambio.total_eur,\n  };\n  const ded = calcularDeducible({ ...base, numero: txtOrNull(f.numero), categoria: f.categoria }, cliente, forzado);\n  return { ...base, ...ded };\n};\n\n// --- Validación (céntimos). hoy = AAAA-MM-DD en Europe/Madrid. total_a_pagar_leido: el impreso (Ingesta) ---\nconst validarFactura = (f, hoy) => {\n  const errores = [];\n  const fmt = (x) => x.toFixed(2);\n  if (!f.proveedor) errores.push('No se ha identificado el proveedor.');\n  if (f.total === null) errores.push('No se ha encontrado el total.');\n  else if (cent(f.total) === 0) errores.push('El total no puede ser 0.');\n  else if (f.total < 0 && f.tipo_factura !== 'rectificativa') errores.push(`El total (${fmt(f.total)}) es negativo y la factura no es rectificativa.`);\n  const desglose = f.desglose || [];\n  const exC = cent(f.base_exenta || 0);\n  if (!desglose.length && !exC) {\n    errores.push('No se puede comprobar base + IVA = total: falta base imponible y cuota de IVA.');\n  } else if (desglose.some((l) => l.base === null || l.cuota_iva === null)) {\n    const faltan = [desglose.some((l) => l.base === null) ? 'base imponible' : null, desglose.some((l) => l.cuota_iva === null) ? 'cuota de IVA' : null].filter(Boolean).join(' y ');\n    errores.push(`No se puede comprobar base + IVA = total: falta ${faltan}.`);\n  } else if (f.total !== null) {\n    const baseC = desglose.reduce((s, l) => s + cent(l.base), 0) + exC;\n    const ivaC = desglose.reduce((s, l) => s + cent(l.cuota_iva), 0);\n    const reC = desglose.reduce((s, l) => s + cent(l.cuota_re || 0), 0);\n    const supC = cent(f.suplidos || 0);\n    const sumaC = baseC + ivaC + reC + supC;\n    const dif = sumaC - cent(f.total);\n    if (Math.abs(dif) > 2) {\n      if (!reC && !supC) errores.push(`Base (${fmt(baseC / 100)}) + IVA (${fmt(ivaC / 100)}) = ${fmt(sumaC / 100)}, no cuadra con el total (${fmt(f.total)}): diferencia de ${fmt(dif / 100)} €.`);\n      else errores.push(`Base (${fmt(baseC / 100)}) + IVA (${fmt(ivaC / 100)}) + recargo (${fmt(reC / 100)}) + suplidos (${fmt(supC / 100)}) = ${fmt(sumaC / 100)}, no cuadra con el total (${fmt(f.total)}): diferencia de ${fmt(dif / 100)} €.`);\n    }\n  }\n  if (f.total !== null && f.total_a_pagar_leido !== null && f.total_a_pagar_leido !== undefined) {\n    const esperado = cent(f.total) - cent(f.irpf_cuota || 0);\n    const dif = esperado - cent(f.total_a_pagar_leido);\n    if (Math.abs(dif) > 2) errores.push(`Total (${fmt(f.total)}) − retención (${fmt(f.irpf_cuota || 0)}) = ${fmt(esperado / 100)}, no cuadra con el total a pagar (${fmt(f.total_a_pagar_leido)}).`);\n  }\n  if (!f.fecha_emision) errores.push('Fecha de emisión ausente o no válida.');\n  else if (f.fecha_emision > hoy) errores.push(`La fecha de emisión (${f.fecha_emision}) es futura.`);\n  if (f.moneda && f.moneda !== 'EUR' && (f.total_eur === null || f.total_eur === undefined)) errores.push(`Sin tipo de cambio para ${f.moneda}: no se suma en los totales en euros.`);\n  return errores;\n};\n// === COMÚN Ingesta/API: fin ===\n\nif (metodo === 'GET') {\n  const items = filas.sort((a, b) => (a.nombre === 'Personal' ? -1 : b.nombre === 'Personal' ? 1 : String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' }))).map(publico);\n  return responder(200, { items });\n}\n\nconst REGIMENES = ['general', 'recargo_equivalencia', 'simplificado', 'particular'];\nconst cuerpo = w.body;\nif (!cuerpo || typeof cuerpo !== 'object' || Array.isArray(cuerpo)) return responder(400, { error: 'El cuerpo debe ser un objeto JSON.', detalles: [] });\nconst PERMITIDOS = metodo === 'POST' ? ['nombre', 'nif', 'regimen_iva', 'prorrata_pct'] : ['nombre', 'nif', 'regimen_iva', 'prorrata_pct', 'activo'];\nconst fuera = Object.keys(cuerpo).filter((k) => !PERMITIDOS.includes(k));\nif (fuera.length) return responder(400, { error: 'Campos no permitidos.', detalles: [`No se pueden enviar: ${fuera.join(', ')}. Permitidos: ${PERMITIDOS.join(', ')}.`] });\n\nlet actual = null;\nif (metodo === 'PATCH') {\n  const raw = String((w.query && w.query.id) ?? '').trim();\n  if (!/^\\d{1,12}$/.test(raw) || Number(raw) < 1) return responder(400, { error: 'Parámetros no válidos.', detalles: ['El id del cliente debe ser un entero positivo (/clientes?id=N).'] });\n  actual = filas.find((c) => c.id === Number(raw));\n  if (!actual) return responder(404, { error: 'Cliente no encontrado.', id: Number(raw) });\n  if (!Object.keys(cuerpo).length) return responder(400, { error: 'No hay campos que modificar.', detalles: [] });\n}\n\nconst errores = [];\nconst nuevo = actual ? { ...actual } : { nombre: null, nif: '', regimen_iva: 'general', prorrata_pct: 100, activo: true };\nif ('nombre' in cuerpo || metodo === 'POST') {\n  const t = txtOrNull(cuerpo.nombre);\n  if (!t) errores.push('\"nombre\" es obligatorio.');\n  else if (t.length > 200) errores.push('\"nombre\" admite como máximo 200 caracteres.');\n  else nuevo.nombre = t;\n}\nif ('regimen_iva' in cuerpo) {\n  if (!REGIMENES.includes(cuerpo.regimen_iva)) errores.push(`\"regimen_iva\" debe ser uno de: ${REGIMENES.join(', ')}.`);\n  else nuevo.regimen_iva = cuerpo.regimen_iva;\n}\nif ('prorrata_pct' in cuerpo) {\n  const p = cuerpo.prorrata_pct;\n  if (typeof p !== 'number' || !Number.isFinite(p) || p < 0 || p > 100) errores.push('\"prorrata_pct\" debe ser un número entre 0 y 100.');\n  else nuevo.prorrata_pct = Math.round(p * 100) / 100;\n}\nif ('activo' in cuerpo) {\n  if (typeof cuerpo.activo !== 'boolean') errores.push('\"activo\" debe ser true o false.');\n  else nuevo.activo = cuerpo.activo;\n}\nif ('nif' in cuerpo || metodo === 'POST') {\n  const v = cuerpo.nif === null || cuerpo.nif === undefined ? '' : cuerpo.nif;\n  if (typeof v !== 'string') errores.push('\"nif\" debe ser texto.');\n  else nuevo.nif = normalizarNif(v) || '';\n}\nif (!errores.length) {\n  if (!nuevo.nif && nuevo.regimen_iva !== 'particular') errores.push('El NIF es obligatorio salvo para clientes en régimen «particular».');\n  else if (nuevo.nif && validarNif(nuevo.nif) !== true) errores.push(`El NIF ${nuevo.nif} no es un NIF/NIE/CIF español válido (dígito de control).`);\n  else if (nuevo.nif && filas.some((c) => c.id !== (actual && actual.id) && normalizarNif(c.nif) === nuevo.nif)) errores.push(`Ya hay otro cliente con el NIF ${nuevo.nif}.`);\n}\nif (actual && actual.nombre === 'Personal' && nuevo.nombre !== 'Personal') errores.push('El cliente «Personal» no se puede renombrar (es el cliente por defecto).');\nif (errores.length) return responder(422, { error: 'Datos no válidos.', detalles: errores });\n\nconst fila = { nombre: nuevo.nombre, nif: nuevo.nif, regimen_iva: nuevo.regimen_iva, prorrata_pct: nuevo.prorrata_pct, activo: nuevo.activo };\nif (metodo === 'POST') {\n  fila.creado = $now.setZone('Europe/Madrid').toISO();\n  return [{ json: { accion: 'insertar', fila } }];\n}\nreturn [{ json: { accion: 'actualizar', id: actual.id, fila } }];\n"
+        }
+      },
+      {
+        "id": "c815011f-f6d2-430a-bf20-fd704458759a",
+        "name": "¿Clientes: escribir?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          720,
+          1820
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "esc",
+                "leftValue": "={{ $json.accion }}",
+                "rightValue": "responder",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEquals"
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "94b60c1a-1afb-47d7-a937-ad6cde941ff7",
+        "name": "Clientes: fila",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          960,
+          1760
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Fila exacta para fact_clientes (autoMapInputData).\nreturn [{ json: $input.first().json.fila }];"
+        }
+      },
+      {
+        "id": "bdbc6935-1f76-4829-94fe-36c899ede0e5",
+        "name": "¿Clientes: alta?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1200,
+          1760
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "alta",
+                "leftValue": "={{ $('Clientes: procesar').first().json.accion }}",
+                "rightValue": "insertar",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        }
+      },
+      {
+        "id": "9f6c3099-342b-48a2-bedb-19ed349a4433",
+        "name": "Clientes: insertar",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1440,
+          1700
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "insert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "vFk59qcLmkSdGzZg",
+            "cachedResultName": "fact_clientes"
+          },
+          "columns": {
+            "mappingMode": "autoMapInputData",
+            "value": {},
+            "matchingColumns": [],
+            "schema": []
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "729985ed-38aa-4519-aa00-7c4eb2b14dd6",
+        "name": "Clientes: actualizar",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1440,
+          1840
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "vFk59qcLmkSdGzZg",
+            "cachedResultName": "fact_clientes"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $('Clientes: procesar').first().json.id }}"
+              }
+            ]
+          },
+          "columns": {
+            "mappingMode": "autoMapInputData",
+            "value": {},
+            "matchingColumns": [],
+            "schema": []
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "5d62f32c-d182-4dfc-9f96-40019008d340",
+        "name": "Clientes: respuesta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1680,
+          1760
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// {cliente} con los datos guardados; 201 en el alta.\nconst p = $('Clientes: procesar').first().json;\nconst g = $input.first().json || {};\nconst c = { ...p.fila, ...g };\nconst cliente = { id: g.id ?? p.id, nombre: c.nombre, nif: c.nif ?? '', regimen_iva: c.regimen_iva, prorrata_pct: c.prorrata_pct ?? 100, activo: c.activo !== false };\nreturn [{ json: { status: p.accion === 'insertar' ? 201 : 200, body: { cliente } } }];"
+        }
+      }
+    ],
+    "connections": {
+      "GET /facturas": {
+        "main": [
+          [
+            {
+              "node": "Listado: leer facturas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Listado: leer facturas": {
+        "main": [
+          [
+            {
+              "node": "Listado: filtrar y paginar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Listado: filtrar y paginar": {
+        "main": [
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GET /resumen": {
+        "main": [
+          [
+            {
+              "node": "Resumen: leer facturas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resumen: leer facturas": {
+        "main": [
+          [
+            {
+              "node": "Resumen: calcular",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resumen: calcular": {
+        "main": [
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GET /categorias": {
+        "main": [
+          [
+            {
+              "node": "Categorías: leer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Categorías: leer": {
+        "main": [
+          [
+            {
+              "node": "Categorías: activas ordenadas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Categorías: activas ordenadas": {
+        "main": [
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH /facturas/:id": {
+        "main": [
+          [
+            {
+              "node": "PATCH: validar id",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: validar id": {
+        "main": [
+          [
+            {
+              "node": "¿PATCH id válido?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿PATCH id válido?": {
+        "main": [
+          [
+            {
+              "node": "PATCH: leer factura",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: leer factura": {
+        "main": [
+          [
+            {
+              "node": "PATCH: leer categorías",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: revalidar y fusionar": {
+        "main": [
+          [
+            {
+              "node": "¿PATCH correcto?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿PATCH correcto?": {
+        "main": [
+          [
+            {
+              "node": "PATCH: preparar fila",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: preparar fila": {
+        "main": [
+          [
+            {
+              "node": "PATCH: guardar factura",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: guardar factura": {
+        "main": [
+          [
+            {
+              "node": "¿Cambió la categoría?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Cambió la categoría?": {
+        "main": [
+          [
+            {
+              "node": "PATCH: calcular regla",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "PATCH: respuesta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: calcular regla": {
+        "main": [
+          [
+            {
+              "node": "PATCH: guardar regla",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: guardar regla": {
+        "main": [
+          [
+            {
+              "node": "PATCH: respuesta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: respuesta": {
+        "main": [
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DELETE /facturas/:id": {
+        "main": [
+          [
+            {
+              "node": "DELETE: validar id",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DELETE: validar id": {
+        "main": [
+          [
+            {
+              "node": "¿DELETE id válido?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿DELETE id válido?": {
+        "main": [
+          [
+            {
+              "node": "DELETE: leer factura",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DELETE: leer factura": {
+        "main": [
+          [
+            {
+              "node": "DELETE: preparar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DELETE: preparar": {
+        "main": [
+          [
+            {
+              "node": "¿DELETE existe?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿DELETE existe?": {
+        "main": [
+          [
+            {
+              "node": "DELETE: marcar borrada",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DELETE: marcar borrada": {
+        "main": [
+          [
+            {
+              "node": "DELETE: respuesta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DELETE: respuesta": {
+        "main": [
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH /facturas?id": {
+        "main": [
+          [
+            {
+              "node": "PATCH: validar id",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DELETE /facturas?id": {
+        "main": [
+          [
+            {
+              "node": "DELETE: validar id",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GET /archivo": {
+        "main": [
+          [
+            {
+              "node": "Archivo: validar id",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Archivo: validar id": {
+        "main": [
+          [
+            {
+              "node": "¿Archivo id válido?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Archivo id válido?": {
+        "main": [
+          [
+            {
+              "node": "Archivo: leer factura",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Archivo: leer factura": {
+        "main": [
+          [
+            {
+              "node": "Archivo: comprobar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Archivo: comprobar": {
+        "main": [
+          [
+            {
+              "node": "¿Archivo ruta válida?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Archivo ruta válida?": {
+        "main": [
+          [
+            {
+              "node": "Archivo: leer disco",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Archivo: leer disco": {
+        "main": [
+          [
+            {
+              "node": "Archivo: preparar respuesta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Archivo: preparar respuesta": {
+        "main": [
+          [
+            {
+              "node": "¿Archivo en disco?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Archivo en disco?": {
+        "main": [
+          [
+            {
+              "node": "Responder archivo",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: leer categorías": {
+        "main": [
+          [
+            {
+              "node": "PATCH: leer clientes",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: leer clientes": {
+        "main": [
+          [
+            {
+              "node": "PATCH: leer reglas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: leer reglas": {
+        "main": [
+          [
+            {
+              "node": "PATCH: preparar cambio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: preparar cambio": {
+        "main": [
+          [
+            {
+              "node": "¿PATCH necesita BCE?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿PATCH necesita BCE?": {
+        "main": [
+          [
+            {
+              "node": "PATCH: BCE tipo de cambio",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "PATCH: revalidar y fusionar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH: BCE tipo de cambio": {
+        "main": [
+          [
+            {
+              "node": "PATCH: revalidar y fusionar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH /facturas/lote": {
+        "main": [
+          [
+            {
+              "node": "Lote: validar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Lote: validar": {
+        "main": [
+          [
+            {
+              "node": "¿PATCH id válido?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GET /clientes": {
+        "main": [
+          [
+            {
+              "node": "Clientes: leer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "POST /clientes": {
+        "main": [
+          [
+            {
+              "node": "Clientes: leer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH /clientes": {
+        "main": [
+          [
+            {
+              "node": "Clientes: leer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Clientes: leer": {
+        "main": [
+          [
+            {
+              "node": "Clientes: procesar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Clientes: procesar": {
+        "main": [
+          [
+            {
+              "node": "¿Clientes: escribir?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Clientes: escribir?": {
+        "main": [
+          [
+            {
+              "node": "Clientes: fila",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Clientes: fila": {
+        "main": [
+          [
+            {
+              "node": "¿Clientes: alta?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "¿Clientes: alta?": {
+        "main": [
+          [
+            {
+              "node": "Clientes: insertar",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Clientes: actualizar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Clientes: insertar": {
+        "main": [
+          [
+            {
+              "node": "Clientes: respuesta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Clientes: actualizar": {
+        "main": [
+          [
+            {
+              "node": "Clientes: respuesta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Clientes: respuesta": {
+        "main": [
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "errorWorkflow": "V08lXHOvWDQal70V",
+      "timezone": "Europe/Madrid"
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "nodeGroups": [
+      {
+        "id": "09869480-2c52-4153-9695-03a3c1ee2ba9",
+        "name": "GET /facturas",
+        "nodeIds": [
+          "8a58dc07-3b3b-4cef-b386-a8250535b580",
+          "059ef789-23d7-465b-ba41-38031a01c1f0"
+        ],
+        "description": "Lee las facturas del usuario y filtra, ordena (fecha desc) y pagina en Code."
+      },
+      {
+        "id": "16c2fb16-bfb1-4edc-8ed4-aab3010c9fac",
+        "name": "GET /resumen",
+        "nodeIds": [
+          "45785883-b6eb-436d-87c1-8764eb876b01",
+          "aaaf1e68-bb0b-41b2-a48c-6998e872b19f"
+        ],
+        "description": "Totales, categorías, meses, top proveedores, recurrente y periodo anterior, en céntimos."
+      },
+      {
+        "id": "e1ae65b5-acad-4194-b637-fee7fdd737e6",
+        "name": "GET /categorias",
+        "nodeIds": [
+          "cd69c231-e500-418f-9a41-3f13b457ecc8",
+          "4430df77-9f56-403a-b161-795b55bd5f29"
+        ],
+        "description": "Categorías activas de fact_categorias por orden."
+      },
+      {
+        "id": "81a94f45-646a-47b6-9ed9-666d453f2128",
+        "name": "PATCH: guardar factura",
+        "nodeIds": [
+          "2b5ea9a3-5b1e-40c6-b989-9e9cd1bb24c2",
+          "e005e4ce-03e7-4263-8a24-33534fb60db4"
+        ],
+        "description": "Escribe la fila completa en fact_facturas (update por id)."
+      },
+      {
+        "id": "921861c1-ee6e-45d4-bcf9-86b7c3f52097",
+        "name": "PATCH: regla aprendida",
+        "nodeIds": [
+          "0c736907-30f4-4d5d-aa65-d8b62bcb38a1",
+          "ca83b17e-b615-4313-a9df-f839a7f9d357"
+        ],
+        "description": "Si cambia la categoría: upsert en fact_reglas (proveedor_norm → categoría, subcategoría, usos + 1)."
+      },
+      {
+        "id": "ad9aa187-e5d1-4f49-bb41-78cf038c5eb3",
+        "name": "DELETE: lectura",
+        "nodeIds": [
+          "79d050b7-10b5-4f14-8def-aa264d9ae8f4",
+          "af5c2280-31d0-45db-8c5e-e88a5fd45fa7"
+        ],
+        "description": "Lee la factura por id; 404 si no existe."
+      },
+      {
+        "id": "9cbc80e5-67a3-4073-9d10-0ef3fd5f46eb",
+        "name": "DELETE: borrado lógico",
+        "nodeIds": [
+          "a047f159-d793-4fc7-8381-bbcb406a0067",
+          "1c50c648-af8b-40ad-b465-12b0226c581f"
+        ],
+        "description": "estado = borrada y actualizado = ahora; devuelve la factura."
+      },
+      {
+        "id": "a336ce01-aa2f-4d28-a882-38cf0501a6fd",
+        "name": "PATCH: lectura y revalidación",
+        "nodeIds": [
+          "92de16dd-05cd-4e2e-b0b8-658ac5666d26",
+          "0a5f55e3-4f5c-4d48-8bd3-c311436b08dc",
+          "16d40962-662d-4b95-a8c8-76bfd8732ba1",
+          "a4e732b1-4436-4333-8620-acd19269dbe9",
+          "30c23ce7-cca3-4054-9b1f-25d71b89fec2",
+          "3247b6a3-1de5-4373-bdb8-47416909452a",
+          "a93b3b55-aaa8-4203-8048-5dfa8f0d1546",
+          "509c2f6b-9970-4eeb-ab7c-dbf7b66c9c57"
+        ],
+        "description": "Lee facturas, categorías, clientes y reglas; BCE si cambia la moneda o la fecha; recálculo fiscal y revalidación (bloque COMÚN)."
+      },
+      {
+        "id": "59af5cce-18a2-47f4-bbff-40dd4478432c",
+        "name": "Clientes: leer y validar",
+        "nodeIds": [
+          "5f8f2752-f5d3-4aee-a6fa-f810359474a9",
+          "56cefbcc-d36d-4c21-98f3-f01907dfd152"
+        ],
+        "description": "Lee fact_clientes; GET lista; POST/PATCH validan nombre, régimen, prorrata y NIF (bloque COMÚN, sin duplicados)."
+      },
+      {
+        "id": "db976d51-fc61-43b0-8336-767901e646d1",
+        "name": "Clientes: guardar",
+        "nodeIds": [
+          "94b60c1a-1afb-47d7-a937-ad6cde941ff7",
+          "bdbc6935-1f76-4829-94fe-36c899ede0e5",
+          "9f6c3099-342b-48a2-bedb-19ed349a4433",
+          "729985ed-38aa-4519-aa00-7c4eb2b14dd6",
+          "5d62f32c-d182-4dfc-9f96-40019008d340"
+        ],
+        "description": "Inserta (201) o actualiza el cliente y responde {cliente}."
+      }
+    ],
+    "pinData": null,
+    "versionId": "1965c286-648f-445c-a70d-a7b2202fe1e8",
+    "activeVersionId": "1965c286-648f-445c-a70d-a7b2202fe1e8",
+    "versionCounter": 12,
+    "triggerCount": 12,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-10-14T18:27:05.237Z",
+        "createdAt": "2026-10-14T18:27:05.237Z",
+        "role": "workflow:owner",
+        "workflowId": "cIun06A6qcYKdqfs",
+        "projectId": "bZtIqKac0YRZrt14",
+        "project": {
+          "updatedAt": "2026-10-08T21:42:10.105Z",
+          "createdAt": "2026-10-08T21:41:04.349Z",
+          "id": "bZtIqKac0YRZrt14",
+          "name": "Jaime Gomez <tu-correo@ejemplo.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "bd591b97-d638-4c8a-9c0b-ccbab2197267"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "No aprender reglas de suministros (en revalidar)",
+      "description": "Updated nodes: PATCH: revalidar y fusionar, PATCH: calcular regla"
+    }
+  }
+]

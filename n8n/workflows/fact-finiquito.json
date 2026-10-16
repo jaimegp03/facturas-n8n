@@ -1,0 +1,152 @@
+[
+  {
+    "updatedAt": "2026-10-15T16:53:06.192Z",
+    "createdAt": "2026-10-15T16:49:11.049Z",
+    "id": "VV4Oty7R5x95CAKV",
+    "name": "FACT — Finiquito",
+    "description": "POST /finiquito: calculadora de finiquito e indemnización (España, orientativa).",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "af6233b4-9c44-4233-9d53-d05cf26b53ff",
+        "name": "POST /finiquito",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          0
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "finiquito",
+          "authentication": "headerAuth",
+          "responseMode": "responseNode",
+          "options": {
+            "allowedOrigins": "null,http://localhost,http://localhost:3000,http://localhost:5173,http://localhost:5500,http://localhost:8000,http://localhost:8080,http://localhost:8765,http://127.0.0.1:5500,http://127.0.0.1:8000,http://127.0.0.1:8080,http://127.0.0.1:8765"
+          }
+        },
+        "webhookId": "8a24d684-2920-4d9d-8b80-e9625f35c2cd",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "factApiKey0000001",
+            "name": "FACT API Key"
+          }
+        }
+      },
+      {
+        "id": "67e332f2-77dd-41a6-a538-3a16c97a2dd2",
+        "name": "Calcular finiquito",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          0
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "// FACT — Finiquito: POST /finiquito. Todo en céntimos enteros; sin LLM. Estimación orientativa, sin valor de asesoramiento.\n// === COMÚN Finiquito: inicio ===\n// (Función pura: la misma copia vive en web/index.html para el modo demo; no uses globales de n8n aquí.)\nfunction calcularFiniquito(entrada, hoyISO) {\n  const TIPOS = ['dimision', 'fin_contrato_temporal', 'despido_improcedente', 'despido_objetivo', 'despido_disciplinario_procedente', 'mutuo_acuerdo', 'fin_obra_o_servicio'];\n  const ETIQ = { dimision: 'Dimisión', fin_contrato_temporal: 'Fin de contrato temporal', despido_improcedente: 'Despido improcedente', despido_objetivo: 'Despido objetivo', despido_disciplinario_procedente: 'Despido disciplinario procedente', mutuo_acuerdo: 'Mutuo acuerdo', fin_obra_o_servicio: 'Fin de obra o servicio' };\n  const e = entrada && typeof entrada === 'object' ? entrada : {};\n  const errores = [];\n  const vacio = (v) => v === undefined || v === null || v === '';\n  const numero = (k, def, min, max, entero) => {\n    let v = e[k];\n    if (vacio(v)) return def;\n    if (typeof v === 'string') v = v.trim().replace(',', '.');\n    const n = typeof v === 'boolean' ? NaN : Number(v);\n    if (!Number.isFinite(n)) { errores.push(`\"${k}\" debe ser un número.`); return def; }\n    if (n < min || n > max) { errores.push(`\"${k}\" debe estar entre ${min} y ${max}.`); return def; }\n    if (entero && !Number.isInteger(n)) { errores.push(`\"${k}\" debe ser un entero.`); return def; }\n    return n;\n  };\n  const booleano = (k, def) => {\n    const v = e[k];\n    if (vacio(v)) return def;\n    if (v === true || v === 'true' || v === 1 || v === '1') return true;\n    if (v === false || v === 'false' || v === 0 || v === '0') return false;\n    errores.push(`\"${k}\" debe ser true o false.`);\n    return def;\n  };\n  const dia = (s) => { // 'AAAA-MM-DD' -> días desde 1970 (UTC) o null\n    if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return null;\n    const [y, m, d] = s.split('-').map(Number);\n    const t = Date.UTC(y, m - 1, d);\n    const f = new Date(t);\n    if (f.getUTCFullYear() !== y || f.getUTCMonth() !== m - 1 || f.getUTCDate() !== d || y < 1950 || y > 2100) return null;\n    return t / 86400000;\n  };\n  const ymd = (n) => { const f = new Date(n * 86400000); return [f.getUTCFullYear(), f.getUTCMonth() + 1, f.getUTCDate()]; };\n  const iso = (n) => { const [y, m, d] = ymd(n); return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };\n  const sumaMeses = (n, k) => { // n + k meses, ajustando el día al fin de mes\n    const [y, m, d] = ymd(n);\n    const tot = y * 12 + (m - 1) + k;\n    const ny = Math.floor(tot / 12), nm = tot % 12;\n    const ult = new Date(Date.UTC(ny, nm + 1, 0)).getUTCDate();\n    return Date.UTC(ny, nm, Math.min(d, ult)) / 86400000;\n  };\n  // Meses completos y días sobrantes entre a (incluido) y b (excluido)\n  const diferencia = (a, b) => {\n    const [ya, ma, da] = ymd(a), [yb, mb, db] = ymd(b);\n    let m = (yb - ya) * 12 + (mb - ma);\n    if (db < da) m -= 1;\n    if (m < 0) m = 0;\n    return { meses: m, dias: b - sumaMeses(a, m) };\n  };\n  const mesesCeil = (a, b) => { if (b <= a) return 0; const r = diferencia(a, b); return r.meses + (r.dias > 0 ? 1 : 0); };\n  const fmt = (c) => { const s = Math.abs(c); const ent = Math.floor(s / 100).toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.'); return `${c < 0 ? '-' : ''}${ent},${String(s % 100).padStart(2, '0')} €`; };\n  const f2 = (x) => (Math.round(x * 100) / 100).toString().replace('.', ',');\n  const cent = (x) => Math.round(x + 1e-9);\n\n  const tipo = e.tipo_extincion;\n  if (!TIPOS.includes(tipo)) errores.push(`\"tipo_extincion\" debe ser uno de: ${TIPOS.join(', ')}.`);\n  const ini = dia(e.fecha_inicio), fin = dia(e.fecha_fin);\n  if (ini === null) errores.push('\"fecha_inicio\" debe ser una fecha válida AAAA-MM-DD.');\n  if (fin === null) errores.push('\"fecha_fin\" debe ser una fecha válida AAAA-MM-DD.');\n  if (ini !== null && fin !== null && fin < ini) errores.push('\"fecha_fin\" no puede ser anterior a \"fecha_inicio\".');\n  if (ini !== null && fin !== null && fin >= ini && (fin - ini) > 366 * 60) errores.push('La antigüedad no puede superar 60 años.');\n  const anual = numero('salario_bruto_anual', null, 0.01, 10000000);\n  if (anual === null && !errores.some((x) => x.includes('salario_bruto_anual'))) errores.push('\"salario_bruto_anual\" es obligatorio y debe ser mayor que 0.');\n  const numPagas = numero('num_pagas', 14, 12, 15, true);\n  if (![12, 14, 15].includes(numPagas) && !errores.some((x) => x.includes('num_pagas'))) errores.push('\"num_pagas\" debe ser 12, 14 o 15.');\n  const prorrat = booleano('pagas_prorrateadas', false);\n  const vacAnuales = numero('dias_vacaciones_anuales', 30, 0, 366);\n  const vacDisf = numero('dias_vacaciones_disfrutadas', 0, 0, 366);\n  const preaviso = numero('preaviso_dias_incumplidos', 0, 0, 365);\n  const irpfPct = numero('irpf_pct', 0, 0, 60);\n  const ssPct = numero('ss_pct', 6.5, 0, 30);\n  const pactada = numero('indemnizacion_pactada_dias_por_anio', 0, 0, 365);\n  if (errores.length) return { status: 400, body: { error: 'Datos no válidos', detalles: errores } };\n\n  const avisos = [];\n  const anualC = cent(anual * 100);\n  const extrasSeparadas = !prorrat && numPagas > 12;\n  const sd = anualC / 365; // diario con prorrata de extras (base de la indemnización)\n  const mensualOrd = extrasSeparadas ? anualC / numPagas : anualC / 12; // mensualidad de la paga ordinaria\n  const sdBase = extrasSeparadas ? (mensualOrd * 12) / 365 : sd; // diario sin pagas extra (vacaciones)\n  const pagaExtra = anualC / numPagas;\n  const finExcl = fin + 1;\n\n  // Antigüedad (ambos días incluidos)\n  const dif = diferencia(ini, finExcl);\n  const antig = { anios: Math.floor(dif.meses / 12), meses: dif.meses % 12, dias: dif.dias, dias_totales: finExcl - ini };\n  const mesesTot = mesesCeil(ini, finExcl);\n\n  // Conceptos del finiquito\n  const [yf, mf, df] = ymd(fin);\n  const inicioMes = Date.UTC(yf, mf - 1, 1) / 86400000;\n  const ultimoMes = new Date(Date.UTC(yf, mf, 0)).getUTCDate();\n  const desdeMes = Math.max(ini, inicioMes);\n  let diasMes = fin - desdeMes + 1;\n  if (desdeMes === inicioMes && df === ultimoMes) diasMes = 30;\n  diasMes = Math.min(30, diasMes);\n  const salarioMes = cent((mensualOrd / 30) * diasMes);\n\n  const ini1 = Date.UTC(yf, 0, 1) / 86400000, fin1 = Date.UTC(yf, 11, 31) / 86400000;\n  const diasAnio = fin1 - ini1 + 1;\n  const diasTrabAnio = fin - Math.max(ini, ini1) + 1;\n  const vacDev = (vacAnuales * diasTrabAnio) / diasAnio;\n  const vacPend = vacDev - vacDisf;\n  const vacImp = cent(vacPend * sdBase);\n  if (vacPend < 0) avisos.push('Has disfrutado más vacaciones de las devengadas: se descuentan (solo procede si el convenio o el contrato lo permite).');\n\n  let extrasImp = 0, extrasDet = '';\n  if (extrasSeparadas) {\n    const semIni = mf <= 6 ? ini1 : Date.UTC(yf, 6, 1) / 86400000;\n    const semFin = mf <= 6 ? Date.UTC(yf, 5, 30) / 86400000 : fin1;\n    const fracSem = (fin - Math.max(ini, semIni) + 1) / (semFin - semIni + 1);\n    extrasDet = `Paga de ${mf <= 6 ? 'verano' : 'Navidad'}: ${f2(fracSem * 100)} % del semestre`;\n    let imp = pagaExtra * fracSem;\n    if (numPagas === 15) {\n      const fracAnio = diasTrabAnio / diasAnio;\n      imp += pagaExtra * fracAnio;\n      extrasDet += ` + paga anual: ${f2(fracAnio * 100)} % del año`;\n    }\n    extrasImp = cent(imp);\n  } else extrasDet = 'Pagas extra prorrateadas en la nómina: nada que liquidar aparte';\n\n  const preavisoImp = cent(preaviso * sd);\n  if (preaviso > 0 && tipo !== 'dimision') avisos.push('El descuento por preaviso se aplica aquí por indicarse días incumplidos; normalmente solo procede en la dimisión.');\n  const subtotal = salarioMes + vacImp + extrasImp - preavisoImp;\n\n  // Indemnización\n  const CORTE = Date.UTC(2012, 1, 12) / 86400000;\n  const MAX_DIAS = 720;\n  let diasInd = 0, legalC = 0, detInd = '';\n  let exentaPosible = false;\n  const rotulo = { despido_improcedente: '33 días por año', despido_objetivo: '20 días por año', fin_contrato_temporal: '12 días por año', fin_obra_o_servicio: '12 días por año' };\n  if (tipo === 'despido_improcedente') {\n    exentaPosible = true;\n    if (ini >= CORTE) {\n      diasInd = Math.min((33 * mesesTot) / 12, MAX_DIAS);\n      detInd = `33 días/año × ${mesesTot} meses / 12 (tope 720 días)`;\n    } else {\n      const mPre = mesesCeil(ini, Math.min(finExcl, CORTE));\n      const mPost = Math.max(0, mesesTot - mPre);\n      const dPre = (45 * mPre) / 12, dPost = (33 * mPost) / 12;\n      if (dPre > MAX_DIAS) {\n        diasInd = Math.min(dPre, 1260);\n        detInd = `45 días/año × ${mPre} meses / 12 hasta el 11/02/2012 = ${f2(dPre)} días (supera 720: se conserva, tope 42 mensualidades; no se añade el tramo posterior)`;\n        avisos.push('El tramo anterior al 12/02/2012 ya supera 720 días: se aplica ese importe con tope de 42 mensualidades y no se suma el tramo posterior.');\n      } else {\n        diasInd = Math.min(dPre + dPost, MAX_DIAS);\n        detInd = `45 días/año × ${mPre} meses / 12 (hasta 11/02/2012) + 33 días/año × ${mPost} meses / 12 (desde 12/02/2012), tope 720 días`;\n      }\n    }\n    legalC = cent(diasInd * sd);\n  } else if (tipo === 'despido_objetivo') {\n    exentaPosible = true;\n    diasInd = (20 * mesesTot) / 12;\n    legalC = Math.min(cent(diasInd * sd), anualC);\n    detInd = `20 días/año × ${mesesTot} meses / 12 (tope 12 mensualidades = ${fmt(anualC)})`;\n    if (cent(diasInd * sd) > anualC) diasInd = (anualC / sd);\n  } else if (tipo === 'fin_contrato_temporal' || tipo === 'fin_obra_o_servicio') {\n    diasInd = (12 * mesesTot) / 12;\n    legalC = cent(diasInd * sd);\n    detInd = `12 días/año × ${mesesTot} meses / 12`;\n    if (ini < Date.UTC(2015, 0, 1) / 86400000) avisos.push('Contratos temporales anteriores al 1/1/2015: la indemnización puede ser de 8 días/año (o 12 progresivos según la fecha); revísalo con tu convenio.');\n    if (tipo === 'fin_obra_o_servicio') avisos.push('El contrato de obra o servicio ya no existe en contratos nuevos desde la reforma laboral de 2021; el cálculo usa 12 días/año.');\n  } else if (tipo === 'despido_disciplinario_procedente') {\n    avisos.push('Despido disciplinario procedente: no genera indemnización. Si fuera declarado improcedente o nulo, el resultado cambiaría.');\n  }\n  let indemC = legalC;\n  if (pactada > 0) {\n    const pacC = cent(((pactada * mesesTot) / 12) * sd);\n    if (pacC > legalC) {\n      indemC = pacC;\n      detInd = `${f2(pactada)} días/año pactados × ${mesesTot} meses / 12` + (legalC > 0 ? ` (mayor que la legal ${fmt(legalC)})` : '');\n    } else if (legalC > 0) avisos.push('La indemnización pactada es inferior a la legal: se aplica la legal.');\n  }\n  if (indemC === 0 && !detInd) detInd = 'No genera indemnización legal';\n\n  // Fiscalidad y Seguridad Social (estimaciones)\n  const exentaC = exentaPosible ? Math.min(legalC, 18000000) : 0;\n  const sujetaIndem = indemC - exentaC;\n  const baseIrpf = Math.max(0, subtotal) + sujetaIndem;\n  const retC = cent((baseIrpf * irpfPct) / 100);\n  const ssC = cent((Math.max(0, subtotal) * ssPct) / 100);\n  const brutoTotal = subtotal + indemC;\n  const neto = brutoTotal - retC - ssC;\n\n  // Avisos\n  avisos.push('Estimación orientativa sin valor de asesoramiento ni de liquidación oficial: tu convenio colectivo o contrato pueden mejorar estos importes.');\n  if (hoyISO && fin > dia(hoyISO)) avisos.push('La fecha de fin es futura: se calcula como previsión.');\n  if (irpfPct === 0) avisos.push('Con IRPF 0 % no se estima retención; indica el porcentaje de tu nómina (o el que te comunique la empresa).');\n  if (indemC > 0 && !exentaPosible) avisos.push('Esta indemnización se considera sujeta a IRPF (la exención del art. 7.e LIRPF es para despidos y ceses con indemnización legal obligatoria).');\n  if (exentaPosible && legalC > 0) avisos.push('La indemnización legal está exenta de IRPF hasta el mínimo legal y 180.000 €; no se estima la reducción del 30 % de rentas irregulares del resto.');\n  if (mesesTot > 0 && antig.dias > 0) avisos.push('Los meses incompletos se cuentan como mes entero al prorratear la indemnización.');\n  if (extrasSeparadas) avisos.push('Pagas extra: se supone que las de 14 pagas se devengan por semestres (verano ene-jun, Navidad jul-dic) y la tercera de 15 pagas por año natural.');\n  if (tipo === 'despido_improcedente') avisos.push('En el despido improcedente la empresa puede optar por readmitir; la indemnización es la alternativa.');\n\n  const desglose = [\n    { clave: 'salario', concepto: 'Salario de los días trabajados del último mes', detalle: `${diasMes} días × ${fmt(cent(mensualOrd / 30))}/día`, importe_cent: salarioMes, tipo: 'suma' },\n    { clave: 'vacaciones', concepto: 'Vacaciones devengadas no disfrutadas', detalle: `${f2(vacDev)} devengadas − ${f2(vacDisf)} disfrutadas = ${f2(vacPend)} días × ${fmt(cent(sdBase))}/día`, importe_cent: vacImp, tipo: vacImp >= 0 ? 'suma' : 'resta' },\n    { clave: 'pagas_extra', concepto: 'Parte proporcional de pagas extra', detalle: extrasDet, importe_cent: extrasImp, tipo: 'suma' },\n    { clave: 'preaviso', concepto: 'Descuento por preaviso incumplido', detalle: `${f2(preaviso)} días × ${fmt(cent(sd))}/día`, importe_cent: 0 - preavisoImp, tipo: 'resta' },\n    { clave: 'subtotal', concepto: 'Total finiquito (bruto)', detalle: '', importe_cent: subtotal, tipo: 'subtotal' },\n    { clave: 'indemnizacion', concepto: 'Indemnización', detalle: detInd, importe_cent: indemC, tipo: 'suma' },\n    { clave: 'bruto_total', concepto: 'Total bruto (finiquito + indemnización)', detalle: '', importe_cent: brutoTotal, tipo: 'subtotal' },\n    { clave: 'irpf', concepto: 'Retención IRPF estimada', detalle: `${f2(irpfPct)} % sobre ${fmt(baseIrpf)}` + (exentaC > 0 ? ` (indemnización exenta: ${fmt(exentaC)})` : ''), importe_cent: 0 - retC, tipo: 'resta' },\n    { clave: 'ss', concepto: 'Seguridad Social estimada', detalle: `${f2(ssPct)} % sobre ${fmt(Math.max(0, subtotal))}`, importe_cent: 0 - ssC, tipo: 'resta' },\n    { clave: 'neto', concepto: 'Neto estimado', detalle: '', importe_cent: neto, tipo: 'total' },\n  ];\n  for (const l of desglose) { l.importe = l.importe_cent / 100; }\n  const eur = (c) => c / 100;\n  return {\n    status: 200,\n    body: {\n      tipo_extincion: tipo, tipo_etiqueta: ETIQ[tipo], fecha_inicio: iso(ini), fecha_fin: iso(fin),\n      antiguedad: antig, meses_indemnizacion: mesesTot,\n      salario: { bruto_anual: eur(anualC), mensual_ordinario: eur(cent(mensualOrd)), diario_con_prorrata: Math.round(sd) / 100, diario_sin_extras: Math.round(sdBase) / 100 },\n      dias: { salario_mes: diasMes, vacaciones_devengadas: Math.round(vacDev * 100) / 100, vacaciones_pendientes: Math.round(vacPend * 100) / 100, indemnizacion: Math.round(diasInd * 100) / 100 },\n      conceptos: { salario_mes: eur(salarioMes), vacaciones: eur(vacImp), pagas_extra: eur(extrasImp), preaviso: eur(0 - preavisoImp) },\n      subtotal_finiquito: eur(subtotal), indemnizacion: eur(indemC), indemnizacion_legal: eur(legalC), indemnizacion_exenta: eur(exentaC),\n      bruto_total: eur(brutoTotal), retencion_irpf: eur(retC), seguridad_social: eur(ssC), neto: eur(neto),\n      avisos, desglose,\n    },\n  };\n}\n// === COMÚN Finiquito: fin ===\n\nif (typeof $input !== 'undefined') {\n  const ent = $input.first().json || {};\n  const hoy = $now.setZone('Europe/Madrid').toISODate();\n  const r = calcularFiniquito(ent.body, hoy);\n  return [{ json: r }];\n}\n"
+        }
+      },
+      {
+        "id": "ff631c30-a24d-42bf-87d7-b54442e0e2fc",
+        "name": "Responder",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.5,
+        "position": [
+          480,
+          0
+        ],
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ JSON.stringify($json.body) }}",
+          "options": {
+            "responseCode": "={{ $json.status }}"
+          }
+        }
+      },
+      {
+        "id": "363a5e18-7a5b-4eba-ab0a-07d9a53a11b7",
+        "name": "Sticky Note 9e97fa1e",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          0,
+          -220
+        ],
+        "parameters": {
+          "content": "## FACT — Finiquito\nPOST /finiquito: calculadora orientativa de finiquito e indemnización (España). Todo en Code, céntimos enteros, sin LLM.",
+          "width": 520,
+          "height": 140
+        }
+      }
+    ],
+    "connections": {
+      "POST /finiquito": {
+        "main": [
+          [
+            {
+              "node": "Calcular finiquito",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Calcular finiquito": {
+        "main": [
+          [
+            {
+              "node": "Responder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "errorWorkflow": "V08lXHOvWDQal70V"
+    },
+    "staticData": null,
+    "meta": {
+      "aiBuilderAssisted": true,
+      "builderVariant": "mcp"
+    },
+    "nodeGroups": [],
+    "pinData": null,
+    "versionId": "7ca4e3cb-87e1-429b-ab1a-1d6f65b9d331",
+    "activeVersionId": "7ca4e3cb-87e1-429b-ab1a-1d6f65b9d331",
+    "versionCounter": 3,
+    "triggerCount": 1,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-10-15T16:49:11.053Z",
+        "createdAt": "2026-10-15T16:49:11.053Z",
+        "role": "workflow:owner",
+        "workflowId": "VV4Oty7R5x95CAKV",
+        "projectId": "bZtIqKac0YRZrt14",
+        "project": {
+          "updatedAt": "2026-10-08T21:42:10.105Z",
+          "createdAt": "2026-10-08T21:41:04.349Z",
+          "id": "bZtIqKac0YRZrt14",
+          "name": "Jaime Gomez <tu-correo@ejemplo.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "bd591b97-d638-4c8a-9c0b-ccbab2197267"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": "Evita -0",
+      "description": "Updated nodes: Calcular finiquito"
+    }
+  }
+]
