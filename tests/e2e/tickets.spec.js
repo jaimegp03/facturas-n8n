@@ -35,6 +35,7 @@ test('tickets: textos de la zona de subida y botón Hacer foto con capture', asy
 
 test('tickets: subida simulada de una foto crea un ticket y el detalle muestra las líneas', async ({ page }) => {
   await page.locator('#selCliente').selectOption({ index: 0 }).catch(() => {});
+  await page.evaluate(() => localStorage.setItem('facturas.escanear', 'false'));   // sin escáner: aquí se prueba la subida simulada (el escáner tiene su propio spec)
   await page.locator('#fotoInput').setInputFiles(FOTO);
   const q = page.locator('#queue .qi');
   await expect(q).toHaveCount(1);

@@ -3,7 +3,7 @@
 const MD_SECS = ['resumen', 'ingresos', 'metas', 'deudas', 'renta', 'herramientas'];
 const VIS = {vista: 'facturas', sec: 'resumen'};
 function leerHash() {
-  const h = location.hash, m = h.match(/^#\/(facturas|mi-dinero)(?:\/([a-z]+))?\/?$/);
+  const h = location.hash, m = h.match(/^#\/(facturas|mi-dinero)(?:\/([a-z]+))?\/?(?:\?[^#]*)?$/);
   if (m) return {vista: m[1], sec: MD_SECS.includes(m[2]) ? m[2] : 'resumen'};
   if (/^#c[1-4]$/.test(h)) return {vista: 'facturas', sec: VIS.sec, ancla: h.slice(1)};
   return null;

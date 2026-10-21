@@ -1,0 +1,32 @@
+# Puerta única de la web de facturas.
+# - https://localhost      → web/ + reenvío de /webhook/* a n8n (mismo origen: sin CORS ni contenido mixto)
+# - http://localhost:8080  → lo mismo sin TLS; lo usa Tailscale Serve para publicar un HTTPS real
+{
+	admin localhost:2019
+}
+
+(sitio) {
+	encode gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+	handle /webhook/* {
+		reverse_proxy localhost:5678 {
+			header_up Host localhost:5678
+		}
+	}
+	handle {
+		root * {$FACTURAS_WEB_DIR}
+		file_server
+	}
+}
+
+https://localhost {
+	tls internal
+	import sitio
+}
+
+http://localhost:8080 {
+	import sitio
+}

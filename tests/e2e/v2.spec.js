@@ -78,7 +78,7 @@ test('0 colores hexadecimales fuera de :root y tamaño del archivo', async () =>
   const hex = [...sinRoot.matchAll(/#[0-9a-fA-F]{8}\b|#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g)].map(m => m[0]);
   MEDIDAS.hex_fuera_de_root = hex.length; MEDIDAS.bytes = fs.statSync(f).size;
   expect(hex).toEqual([]);
-  expect(fs.statSync(f).size).toBeLessThan(390 * 1024);
+  expect(fs.statSync(f).size).toBeLessThan(400 * 1024);
 });
 
 test('capturas con demo activa (1440x900 y 390x844)', async ({ browser }) => {

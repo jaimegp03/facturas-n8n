@@ -12,3 +12,4 @@ tests/e2e/test-results/
 tests/e2e/playwright-report/
 # datos reales del usuario (facturas de suministros): no se publican
 docs/auditoria-suministros.md
+tests/escaner/

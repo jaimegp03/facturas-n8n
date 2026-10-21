@@ -10,8 +10,8 @@ module.exports = defineConfig({
   outputDir: '../salida/e2e-resultados',
   use: { channel: 'chrome', headless: true, acceptDownloads: true, locale: 'es-ES', timezoneId: 'Europe/Madrid' },
   projects: [
-    { name: 'escritorio', testIgnore: /auditoria|gestoria|restaurante|autonomo|demo|v2|excel_web|finiquito|mi_dinero|metas|renta|deudas|tickets|vistas|suministros|scroll/, use: { viewport: { width: 1440, height: 900 } } },
-    { name: 'movil', testIgnore: /auditoria|gestoria|restaurante|autonomo|demo|v2|excel_web|finiquito|mi_dinero|metas|renta|deudas|tickets|vistas|suministros|scroll/, use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } },
+    { name: 'escritorio', testIgnore: /auditoria|gestoria|restaurante|autonomo|demo|v2|excel_web|finiquito|mi_dinero|metas|renta|deudas|tickets|vistas|suministros|scroll|escaner|pwa/, use: { viewport: { width: 1440, height: 900 } } },
+    { name: 'movil', testIgnore: /auditoria|gestoria|restaurante|autonomo|demo|v2|excel_web|finiquito|mi_dinero|metas|renta|deudas|tickets|vistas|suministros|scroll|escaner|pwa/, use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } },
     // Modo gestoría (crea y borra datos TEST con tests/fixture_gestoria.py): --project=gestoria
     { name: 'gestoria', testMatch: /gestoria\.spec\.js/, use: { viewport: { width: 1440, height: 900 } } },
     // Calculadora de finiquito (sin datos; compara la copia JS con n8n): --project=finiquito
@@ -31,6 +31,10 @@ module.exports = defineConfig({
     { name: 'suministros', testMatch: /suministros\.spec\.js/, use: { viewport: { width: 1440, height: 900 } } },
     // Mecánica del hover y del scroll en la lista (demo, sin n8n): --project=scroll
     { name: 'scroll', testMatch: /scroll\.spec\.js/, use: { viewport: { width: 1440, height: 900 } } },
+    // Escáner de tickets (fotos sintéticas de tests/escaner, sin n8n ni Gemini): --project=escaner
+    { name: 'escaner', testMatch: /escaner\.spec\.js/, use: { viewport: { width: 1440, height: 900 } } },
+    // PWA: manifest, service worker y modo sin conexión (servidor estático local, sin n8n): --project=pwa
+    { name: 'pwa', testMatch: /pwa\.spec\.js/, use: { viewport: { width: 1440, height: 900 } } },
     // Modo demo (sin n8n; el último test apaga la demo y lee los datos reales): --project=demo
     { name: 'demo', testMatch: /demo\.spec\.js/, use: { viewport: { width: 1440, height: 900 } } },
     // Exportaciones .xlsx en el navegador (demo; guarda en tests/salida/excel_web y valida con openpyxl): --project=excel_web

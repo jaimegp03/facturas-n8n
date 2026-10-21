@@ -70,10 +70,10 @@ Se hace una sola vez. Las instrucciones completas, con todos los detalles, está
    docker compose -f n8n\docker-base\docker-compose.yml -f n8n\docker\docker-compose.override.yml up -d --build
    ```
    Espera un minuto y comprueba que <http://localhost:5678> abre n8n. Cuando reinicies el ordenador, n8n vuelve a arrancar solo al abrir Docker Desktop.
-3. **Abre la web.** Haz doble clic en `web/index.html`. Funciona directamente desde el archivo. Si prefieres servirla desde un puerto (por ejemplo `http://localhost:5500`), n8n solo acepta 3000, 5173, 5500, 8000, 8080 y 8765; con otro puerto, el navegador la bloqueará hasta que se añada en n8n.
+3. **Abre la web con el lanzador (recomendado).** Haz doble clic en `iniciar-facturas.cmd` (en la carpeta del proyecto): arranca Docker y n8n si hace falta, espera a que respondan, levanta la «puerta» HTTPS (Caddy) y abre **https://localhost** en el navegador. Para pararla, `parar-facturas.cmd` (no apaga n8n). La web usa entonces la misma dirección para todo y **no hace falta tocar la URL de Ajustes**. La primera vez, el navegador puede avisar de que el certificado no es de confianza: ejecuta una vez `caddy trust` (te pide confirmar) o entra por `http://localhost:8080`. Detalles en `n8n/caddy/README.md`. Sigue valiendo abrir `web/index.html` con doble clic (modo antiguo, sin instalación ni escáner con cámara en algunos navegadores).
 4. **Pruébala sin tocar nada: Modo demo.** En la cabecera verás un interruptor **Modo demo**. Al activarlo aparece una franja naranja («DEMO · datos ficticios · no se conecta con n8n ni guarda nada») y la web se llena de datos inventados. Es perfecto para aprender: no gasta IA, no escribe nada y al apagarlo vuelves a tus datos reales.
 5. **Conecta con tus datos reales.** Con el Modo demo apagado, pulsa **Ajustes**:
-   - **URL de los webhooks de n8n:** normalmente `http://localhost:5678/webhook` (sin barra al final).
+   - **URL de los webhooks de n8n:** si entras por el lanzador (`https://localhost`) se rellena sola con la de ese sitio. Con el archivo suelto, normalmente `http://localhost:5678/webhook` (sin barra al final).
    - **Token (cabecera X-API-Key):** tu clave de acceso. Es el valor de `FACT_API_KEY` de tu archivo `.env` (no lo copies en ningún otro sitio ni lo compartas).
    - Pulsa **Probar conexión** y luego **Guardar**. Arriba debe aparecer el indicador de conexión en verde.
 
@@ -234,6 +234,14 @@ Borrar una meta o una deuda pide una segunda pulsación («¿Seguro?») para evi
 La web se adapta al móvil: la vista previa lateral se oculta y se abre con **Ver documento**; la fila se abre tocándola; aparece **Hacer foto**.
 
 ![La vista Facturas en el móvil](rediseno/auditorias/capturas/v3-movil-facturas.png)
+
+### 3.5 Instalar la aplicación (PWA), escáner de tickets y acceso desde el móvil
+
+**Instalarla como aplicación.** Entrando por `https://localhost` (o por la dirección de Tailscale, más abajo), la web se puede instalar como una aplicación con su icono y ventana propia, en PC y móvil: en **Ajustes** pulsa **Instalar aplicación**, o usa el menú del navegador (Chrome: ⋮ → Instalar Facturas). En iPhone/iPad: Compartir → Añadir a pantalla de inicio. El icono trae dos atajos: **Hacer foto de un ticket** y **Mi dinero**. Sin conexión se abre la aplicación, pero con aviso «Sin conexión»: **los datos de facturas nunca se guardan en el dispositivo**, así que sin red no verás datos nuevos. Cuando haya una versión nueva aparece «Hay una versión nueva — Actualizar».
+
+**Escáner de tickets.** Al subir **una** foto (con **Hacer foto** en el móvil o eligiendo una imagen) se abre el escáner: detecta el ticket, endereza la perspectiva, quita sombras y mejora el contraste, todo **en tu navegador** (la foto sin procesar no sale del equipo). Puedes arrastrar las 4 esquinas (o usar las flechas del teclado; Mayús = salto grande), elegir **Color mejorado**, **Escala de grises** o **Blanco y negro**, **Rotar 90°**, **Añadir otra foto (ticket largo)** para unir varias en una sola imagen, **Repetir**, **Usar original** (sube la foto tal cual) o **Aceptar** (sube `<nombre>_escaneado.jpg`). Si no encuentra el ticket verás «Ajusta las esquinas». Con **varias imágenes a la vez** se procesan solas y se avisa (las que no se detectan se suben como estaban). No se aplica a PDF; las fotos HEIC se suben tal cual (el navegador no las lee). Se puede desactivar en **Ajustes → Escanear fotos de tickets automáticamente**. Limitaciones: tickets muy arrugados, fotos sin contraste (papel claro sobre mesa blanca) o con el papel cortado por el borde pueden necesitar ajustar las esquinas a mano.
+
+**Desde el móvil o fuera de casa (Tailscale).** Instala Tailscale en el PC y en el móvil (misma cuenta). En el PC, con la web en marcha: `tailscale serve --bg --https=443 http://localhost:8080`; en el móvil abre `https://<equipo>.<tailnet>.ts.net`. Solo lo ven tus dispositivos. La clave de acceso (token) se introduce una vez en el móvil, en Ajustes.
 
 ---
 

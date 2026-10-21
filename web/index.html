@@ -6,6 +6,12 @@
 <title>Facturas · tus gastos en claro</title>
 <meta name="description" content="Sube tus facturas, clasifícalas, analiza el gasto y cierra el trimestre. Los datos viven en tu n8n.">
 <meta name="color-scheme" content="light">
+<meta name="theme-color" content="rgb(15,76,92)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Facturas">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta property="og:title" content="Facturas · tus gastos en claro">
 <meta property="og:description" content="Sube tus facturas, clasifícalas, analiza el gasto y cierra el trimestre.">
 <meta property="og:type" content="website">
@@ -866,6 +872,32 @@ body[data-vista="md"] .periodo{display:none}
 @media (max-width:1400px){.top .cliente-sel select{width:170px}.periodo input{width:112px}.vistas a{padding:5px 12px}}
 .mdn .n,.mdn a{transition:none}
 </style>
+<style id="css-escaner">
+/* ===== PWA y escáner de tickets ===== */
+.pwa-avisos{position:fixed;left:16px;bottom:16px;z-index:70;display:grid;gap:8px;max-width:min(440px,calc(100vw - 32px))}
+.pwa-aviso{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 14px;border-radius:var(--r-panel);background:var(--ink);color:var(--on-accent);font-size:13.5px;box-shadow:var(--shadow-lift)}
+.pwa-aviso.fuera{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-line)}
+.pwa-aviso .btn{padding:4px 12px}
+#dlgEscaner{width:min(1000px,calc(100vw - 24px));max-height:calc(100dvh - 24px)}
+.esc-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:12px 0}
+.esc-col h3{font-size:13px;margin:0 0 6px;color:var(--ink-2)}
+.esc-lienzo,.esc-resu{position:relative;width:100%;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-panel);overflow:hidden;display:flex;justify-content:center}
+.esc-lienzo{touch-action:none;margin:0 auto;display:block}
+.esc-resu{max-height:62vh}
+.esc-grid>*{min-width:0}
+.esc-resu canvas{display:block;max-width:100%;max-height:62vh;width:auto;height:auto}
+.esc-lienzo canvas{display:block;width:100%;height:auto}
+.esc-poli{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.esc-poli polygon{fill:color-mix(in srgb,var(--teal-300) 18%,transparent);stroke:var(--coral-bright);stroke-width:2;vector-effect:non-scaling-stroke}
+.esc-asa{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;padding:0;border-radius:50%;border:3px solid var(--on-accent);background:var(--coral-bright);box-shadow:var(--shadow-lift);cursor:grab;touch-action:none}
+.esc-asa:focus-visible{outline:3px solid var(--teal-900);outline-offset:2px}
+.esc-modos{border:0;margin:0 0 8px;padding:0;display:flex;flex-wrap:wrap;gap:6px 16px}
+.esc-modos legend{font-size:13px;font-weight:600;padding:0;margin-bottom:4px}
+.esc-modos label{display:flex;align-items:center;gap:6px;font-size:13.5px}
+.esc-pags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.esc-acciones{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+@media (max-width:760px){.esc-grid{grid-template-columns:minmax(0,1fr)}.esc-resu,.esc-resu canvas{max-height:48vh}.esc-acciones{justify-content:stretch}.esc-acciones .btn{flex:1 1 40%}}
+</style>
 </head>
 <body>
 <a class="skip" href="#c2">Saltar a la lista de facturas</a>
@@ -1241,14 +1273,16 @@ body[data-vista="md"] .periodo{display:none}
 </div>
 <!--/MD-->
 
-<footer class="foot" id="foot">Los datos viven en tu n8n. Esta página solo guarda en tu navegador la URL y el token de conexión.</footer>
+<footer class="foot" id="foot">Los datos viven en tu n8n. Esta página solo guarda en tu navegador la URL, el token de conexión y tus preferencias. Las fotos de tickets se procesan en tu navegador.</footer>
 
 <dialog id="dlgAjustes" aria-labelledby="ajTit">
   <form class="dlg" method="dialog" id="ajForm">
     <h2 id="ajTit">Ajustes de conexión</h2>
     <p>Se guardan solo en este navegador.</p>
-    <div class="field"><label for="ajUrl">URL de los webhooks de n8n</label><input id="ajUrl" type="url" required placeholder="http://localhost:5678/webhook" spellcheck="false"><small>Sin barra final. Normalmente http://localhost:5678/webhook</small></div>
+    <div class="field"><label for="ajUrl">URL de los webhooks de n8n</label><input id="ajUrl" type="url" required placeholder="http://localhost:5678/webhook" spellcheck="false"><small>Sin barra final. Si abres la web con el lanzador (https://localhost) se rellena sola con la de este sitio; con el archivo suelto suele ser http://localhost:5678/webhook</small></div>
     <div class="field"><label for="ajTok">Token (cabecera X-API-Key)</label><input id="ajTok" type="password" required autocomplete="off" spellcheck="false"><small>El valor de FACT_API_KEY de tu archivo .env</small></div>
+    <div class="field"><label class="fin-chk" for="ajEscanear"><input id="ajEscanear" type="checkbox" checked> Escanear fotos de tickets automáticamente</label><small>Al subir una foto se abre el escáner (recorte, perspectiva y limpieza) antes de enviarla. Varias fotos a la vez se procesan solas. No se aplica a PDF.</small></div>
+    <div class="field" id="ajPwa" hidden><label for="btnInstalar">Aplicación</label><button class="btn" type="button" id="btnInstalar" hidden>Instalar aplicación</button><small id="ajPwaAyuda"></small></div>
     <p class="msg" id="ajMsg" role="status"></p>
     <div class="dlg-actions">
       <button class="btn btn-ghost" value="cancel" type="button" id="ajCancel">Cancelar</button>
@@ -1257,6 +1291,44 @@ body[data-vista="md"] .periodo{display:none}
     </div>
   </form>
 </dialog>
+
+<dialog id="dlgEscaner" aria-labelledby="escTit">
+  <div class="dlg">
+    <h2 id="escTit" tabindex="-1">Escanear ticket</h2>
+    <p id="escAyuda">Ajusta las esquinas si el recorte no coincide con el ticket. Todo se hace en tu navegador.</p>
+    <div class="esc-pags" id="escPaginas" hidden></div>
+    <div class="esc-grid">
+      <div class="esc-col">
+        <h3>Foto original (arrastra las esquinas)</h3>
+        <div class="esc-lienzo" id="escLienzo">
+          <canvas id="escOrigen" role="img" aria-label="Foto original con el contorno del ticket"></canvas>
+          <svg class="esc-poli" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon id="escPoli" points="0,0 100,0 100,100 0,100"/></svg>
+          <button type="button" class="esc-asa" data-i="0"></button><button type="button" class="esc-asa" data-i="1"></button><button type="button" class="esc-asa" data-i="2"></button><button type="button" class="esc-asa" data-i="3"></button>
+        </div>
+      </div>
+      <div class="esc-col">
+        <h3>Resultado</h3>
+        <div class="esc-resu"><canvas id="escResultado" role="img" aria-label="Vista previa del ticket escaneado"></canvas></div>
+      </div>
+    </div>
+    <fieldset class="esc-modos"><legend>Aspecto</legend>
+      <label><input type="radio" name="escModo" value="color" checked> Color mejorado</label>
+      <label><input type="radio" name="escModo" value="grises"> Escala de grises</label>
+      <label><input type="radio" name="escModo" value="bn"> Blanco y negro</label>
+    </fieldset>
+    <p class="msg" id="escMsg" role="status" aria-live="polite"></p>
+    <input class="sr-only" type="file" id="escOtraArchivo" accept="image/*" capture="environment" tabindex="-1" aria-label="Añadir otra foto del ticket">
+    <div class="esc-acciones">
+      <button class="btn btn-ghost" type="button" id="escDescartar">Descartar</button>
+      <button class="btn" type="button" id="escOriginal">Usar original</button>
+      <button class="btn" type="button" id="escRepetir">Repetir</button>
+      <button class="btn" type="button" id="escRotar">Rotar 90°</button>
+      <button class="btn" type="button" id="escOtra">Añadir otra foto (ticket largo)</button>
+      <button class="btn btn-primary" type="button" id="escAceptar">Aceptar</button>
+    </div>
+  </div>
+</dialog>
+<div class="pwa-avisos" id="pwaAvisos" aria-live="polite"></div>
 
 <dialog id="dlgCliente" aria-labelledby="cliTit">
   <form class="dlg" id="cliForm" novalidate>
@@ -1470,7 +1542,17 @@ const store = {
   get(k, d) { if (DEMO && k !== 'demo') return d; try { const v = localStorage.getItem('facturas.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { if (DEMO && k !== 'demo') return; try { localStorage.setItem('facturas.' + k, JSON.stringify(v)); } catch {} }
 };
-const cfg = { base: store.get('base', 'http://localhost:5678/webhook'), token: store.get('token', '') };
+// URL de los webhooks: servida por http(s) (Caddy, mismo origen) usa location.origin + '/webhook'; una URL guardada http:// se ignora bajo https (contenido mixto).
+const ORIGEN_WEB = (location.protocol === 'http:' || location.protocol === 'https:') && location.port !== '5678';
+const baseDefecto = () => ORIGEN_WEB ? location.origin + '/webhook' : 'http://localhost:5678/webhook';
+function baseInicial() {
+  const g = store.get('base', ''), def = baseDefecto();
+  if (!g) return def;
+  if (location.protocol === 'https:' && /^http:\/\//i.test(g)) return def;
+  if (ORIGEN_WEB && /^https?:\/\/(localhost|127\.0\.0\.1)(:5678)?\/webhook\/?$/i.test(g)) return def;
+  return g;
+}
+const cfg = { base: baseInicial(), token: store.get('token', '') };
 const configured = () => DEMO || !!(cfg.base && cfg.token);
 
 async function api(path, opts = {}) {
@@ -3279,7 +3361,7 @@ $('#dsForm').addEventListener('submit', async e => {
 const MD_SECS = ['resumen', 'ingresos', 'metas', 'deudas', 'renta', 'herramientas'];
 const VIS = {vista: 'facturas', sec: 'resumen'};
 function leerHash() {
-  const h = location.hash, m = h.match(/^#\/(facturas|mi-dinero)(?:\/([a-z]+))?\/?$/);
+  const h = location.hash, m = h.match(/^#\/(facturas|mi-dinero)(?:\/([a-z]+))?\/?(?:\?[^#]*)?$/);
   if (m) return {vista: m[1], sec: MD_SECS.includes(m[2]) ? m[2] : 'resumen'};
   if (/^#c[1-4]$/.test(h)) return {vista: 'facturas', sec: VIS.sec, ancla: h.slice(1)};
   return null;
@@ -3323,7 +3405,7 @@ document.addEventListener('click', e => {
 });
 /* ================= ajustes ================= */
 const dlgAj = $('#dlgAjustes');
-function abrirAjustes() { if (DEMO) { toast('Modo demo: no hay conexión con n8n. Apágalo para usar tus datos reales.'); return; } $('#ajUrl').value = cfg.base; $('#ajTok').value = cfg.token; $('#ajMsg').textContent = ''; dlgAj.showModal(); }
+function abrirAjustes() { if (DEMO) { toast('Modo demo: no hay conexión con n8n. Apágalo para usar tus datos reales.'); return; } $('#ajUrl').value = cfg.base; $('#ajTok').value = cfg.token; $('#ajEscanear').checked = escanearActivo(); pwaPintarAjustes(); $('#ajMsg').textContent = ''; dlgAj.showModal(); }
 $('#btnAjustes').addEventListener('click', abrirAjustes);
 $$('[data-open-ajustes]').forEach(b => b.addEventListener('click', abrirAjustes));
 $('#ajCancel').addEventListener('click', () => dlgAj.close());
@@ -3337,7 +3419,7 @@ $('#ajProbar').addEventListener('click', async () => {
 $('#ajForm').addEventListener('submit', e => {
   e.preventDefault();
   cfg.base = $('#ajUrl').value.trim().replace(/\/+$/, ''); cfg.token = $('#ajTok').value.trim();
-  store.set('base', cfg.base); store.set('token', cfg.token);
+  store.set('base', cfg.base); store.set('token', cfg.token); store.set('escanear', $('#ajEscanear').checked);
   dlgAj.close(); toast('Ajustes guardados'); cargarTodo();
 });
 
@@ -3368,6 +3450,10 @@ let subidasActivas = 0;
 async function subir(files) {
   if (!files.length) return;
   if (!configured()) { abrirAjustes(); return; }
+  if (window.Escaner && escanearActivo()) {   // escáner de tickets: solo imágenes (jpg/png/webp); PDF y HEIC pasan sin tocar
+    try { const r = await window.Escaner.preparar(files); files = r.files; if (r.avisos.length) toast(r.avisos.join(' ')); } catch (e) { console.warn('Escáner:', e); }
+    if (!files.length) return;
+  }
   const q = $('#queue');
   const tareas = files.map(f => {
     const li = document.createElement('li'); li.className = 'qi';
@@ -4613,10 +4699,75 @@ async function cargarTodo() {
   await Promise.all([cargarFacturas(true), cargarResumen(), cargarRecs(), cargarMovimientos(), cargarMiDinero()]);
   if (S.cliente) cargarFiscal(); else { $('#fiscalOut').innerHTML = ''; $('#msgFiscal').className = 'msg'; $('#msgFiscal').textContent = 'Elige un cliente arriba para calcular su trimestre.'; }
 }
+/* ================= PWA: instalación, service worker, avisos de red y atajos ================= */
+// Ajuste «Escanear fotos de tickets automáticamente» (se lee directo de localStorage: también vale con la demo activa).
+function escanearActivo() { try { return JSON.parse(localStorage.getItem('facturas.escanear')) !== false; } catch { return true; } }
+const PWA = { evento: null, instalada: false };
+const enStandalone = () => (matchMedia('(display-mode: standalone)').matches || navigator.standalone === true);
+const esIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const contextoSeguro = () => (location.protocol === 'https:' || (location.protocol === 'http:' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)));
+function pwaAviso(id, texto, clase, boton) {
+  let el = document.getElementById(id);
+  if (!el) { el = document.createElement('div'); el.id = id; el.className = 'pwa-aviso ' + (clase || ''); el.setAttribute('role', 'status'); $('#pwaAvisos').appendChild(el); }
+  el.innerHTML = ''; const t = document.createElement('span'); t.textContent = texto; el.appendChild(t);
+  if (boton) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-sm'; b.textContent = boton.texto; b.addEventListener('click', boton.alClick); el.appendChild(b); }
+  return el;
+}
+const pwaQuitar = id => { const el = document.getElementById(id); if (el) el.remove(); };
+function pwaPintarAjustes() {
+  const caja = $('#ajPwa'), btn = $('#btnInstalar'), ayuda = $('#ajPwaAyuda');
+  const ya = enStandalone() || PWA.instalada;
+  btn.hidden = !PWA.evento || ya;
+  let txt = '';
+  if (ya) txt = 'La aplicación ya está instalada en este dispositivo.';
+  else if (PWA.evento) txt = 'Se abrirá como una aplicación con su propio icono y ventana.';
+  else if (esIOS()) txt = 'En iOS: Compartir → Añadir a pantalla de inicio.';
+  else if (contextoSeguro()) txt = 'Si tu navegador lo permite, la opción de instalar aparece en su menú (en Chrome: ⋮ → Instalar Facturas).';
+  ayuda.textContent = txt;
+  caja.hidden = !(contextoSeguro() || esIOS()) || (!txt && btn.hidden);
+}
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); PWA.evento = e; pwaPintarAjustes(); });
+addEventListener('appinstalled', () => { PWA.evento = null; PWA.instalada = true; pwaPintarAjustes(); toast('Aplicación instalada'); });
+$('#btnInstalar').addEventListener('click', async () => {
+  const e = PWA.evento; if (!e) return; PWA.evento = null; pwaPintarAjustes();
+  try { e.prompt(); await e.userChoice; } catch {}
+});
+// Avisos de conexión
+function pwaRed() {
+  if (navigator.onLine) { if (document.getElementById('pwaOff')) { pwaQuitar('pwaOff'); toast('De nuevo con conexión'); if (!DEMO && configured()) cargarTodo(); } }
+  else pwaAviso('pwaOff', 'Sin conexión. Verás lo que ya estaba cargado, pero no se guardan ni se leen datos de n8n hasta que vuelva la red.', 'fuera');
+}
+addEventListener('online', pwaRed); addEventListener('offline', pwaRed);
+if (!navigator.onLine) pwaRed();
+// Manifest y service worker: solo bajo https o localhost (nunca con file://)
+if (contextoSeguro() && 'serviceWorker' in navigator) {
+  const l = document.createElement('link'); l.rel = 'manifest'; l.href = 'manifest.webmanifest'; document.head.appendChild(l);
+  let recargar = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (recargar) location.reload(); });
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const nueva = w => pwaAviso('pwaAct', 'Hay una versión nueva', '', { texto: 'Actualizar', alClick: () => { recargar = true; w.postMessage({tipo: 'SALTAR_ESPERA'}); } });
+    if (reg.waiting && navigator.serviceWorker.controller) nueva(reg.waiting);
+    reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) nueva(w); }); });
+    setInterval(() => reg.update().catch(() => {}), 3600000);
+  }).catch(e => console.warn('Service worker no registrado:', e));
+}
+// Atajo «Hacer foto de un ticket» (#/facturas?foto=1)
+function atajoFoto() {
+  if (!/[?&]foto=1(&|$)/.test(location.hash)) return;
+  history.replaceState(null, '', '#/facturas');
+  const drop = $('#drop'); if (drop) drop.scrollIntoView({block: 'center'});
+  const input = matchMedia('(pointer:coarse)').matches ? $('#fotoInput') : $('#fileInput');
+  pwaAviso('pwaFoto', 'Listo para escanear un ticket.', '', { texto: 'Hacer foto', alClick: () => { pwaQuitar('pwaFoto'); input.click(); } });
+}
+addEventListener('hashchange', atajoFoto);
+
+sincronizarVista();
+atajoFoto();
 sincronizarVista();
 cargarTodo();
 revelar();
 })();
 </script>
+<script src="escaner.js"></script>
 </body>
 </html>
