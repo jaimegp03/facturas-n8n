@@ -24,3 +24,10 @@ Caddy firma `https://localhost` con su propia CA. Para que el navegador no avise
 
 ## Si un puerto está ocupado
 Mira qué proceso lo usa: `netstat -ano | findstr :443` (o `:8080`, `:2019`) y `tasklist /fi "pid eq <PID>"`. Cierra ese programa (suele ser IIS, otro servidor local o Skype antiguo) o cambia el puerto en `n8n/caddy/Caddyfile`. Si `iniciar-facturas.cmd` dice que Caddy no arranca, el motivo queda en `%TEMP%\caddy-facturas.log`.
+
+## Arranque automático al iniciar sesión (tarea programada `Facturas-Caddy`)
+Caddy se lanza oculto cada vez que inicias sesión en Windows (sin permisos de administrador; reintenta hasta 3 veces si falla). **No** arranca n8n/Docker: Docker Desktop y el contenedor `n8n_local` deben estar en marcha (`iniciar-facturas.cmd` los levanta).
+- Ver estado: `Get-ScheduledTask -TaskName Facturas-Caddy | Get-ScheduledTaskInfo` (PowerShell).
+- Arrancarla a mano: `Start-ScheduledTask -TaskName Facturas-Caddy`.
+- **Quitarla**: `Unregister-ScheduledTask -TaskName Facturas-Caddy -Confirm:$false` (o `schtasks /Delete /TN Facturas-Caddy /F`). También desde «Programador de tareas» de Windows → Biblioteca → Facturas-Caddy → Eliminar.
+- Parar Caddy ahora: `parar-facturas.cmd`.
